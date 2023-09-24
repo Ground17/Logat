@@ -37,7 +37,7 @@ pubspec.lock
 analysis_options.yaml
 
 # ads 정보, api key 정보
-lib/ads.dart
+lib/ad_helper.dart
 lib/key.dart
 firebase_options.dart
 

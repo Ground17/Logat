@@ -1,13 +1,12 @@
-# Logation
-It's a React Native Application. And it contains firebase firestore, storage, hosting, functions, etc...
+# Logat
+It's a Flutter Application. And it contains firebase firestore, storage, hosting, functions, etc...
 
 ## You can download!
-- [Android Play Store](https://play.google.com/store/apps/details?id=com.hyla981020.logory)
-- [Apple App Store](https://apps.apple.com/us/app/logation-with-map-and-photo/id1508263544)
+- [Android Play Store]()
+- [Apple App Store]()
 
 ## To-do list
-- [ ] perfect notification functions
-- [ ] make log by using episodes of Infinity Challenge
+- [ ] notification functions
 
 ## App.js (contains function/class component)
 - Main (function component) -> function component that binds initial screen in tabbar form after login. function related to universal link, deep link also added.
@@ -23,7 +22,7 @@ It's a React Native Application. And it contains firebase firestore, storage, ho
 - Following
     - to list up users' following people (not follower people)
 
-- Home
+- Feed
     - to view other users' logs
 
 - Language
@@ -32,26 +31,17 @@ It's a React Native Application. And it contains firebase firestore, storage, ho
 - Login
     - to log in
 
-- Me
+- Profile
     - to view profile of users
 
 - Notification
     - to notify
-
-- Purchase
-    - for in-app purchases
 
 - ResetPassword
     - for password to reset
 
 - Search
     - to search other users
-
-- ShowDetail
-    - to view details(title, subtitle, date, modifyDate, url, ...) of log
-
-- ShowItem
-    - to view details(location, description, ...) of photo
 
 - ShowScreen
     - to view photos and logation of them
