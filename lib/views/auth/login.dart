@@ -11,16 +11,24 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _MyLoginStates extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
   Widget _showBody() {
     return Container(
       padding: EdgeInsets.all(16.0),
-      child: ListView(
-        shrinkWrap: true,
-        children: <Widget>[
+      child: new Form(
+        key: _formKey,
+        child: ListView(
+          shrinkWrap: true,
+          children: <Widget>[
 
-        ],
-      ),
+          ],
+        ),
+      )
     );
+  }
+
+  void _validateAndSubmit() {
+
   }
 
   @override
@@ -32,7 +40,7 @@ class _MyLoginStates extends State<LoginScreen> {
           icon: Icon(Platform.isAndroid ? Icons.arrow_back : CupertinoIcons.back, color: Colors.white),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text("도움말"),
+        title: Text("Log In"),
       ),
       body: _showBody(),
     );

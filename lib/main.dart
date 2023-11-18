@@ -3,20 +3,32 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
+import 'package:image_picker/image_picker.dart';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:native_exif/native_exif.dart';
+import 'firebase_options.dart';
 import 'package:logat/ad_helper.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-void main() {
+Future<FirebaseApp> _initFirebase() {
+  return Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+}
+
+Future<InitializationStatus> _initGoogleMobileAds() {
+  return MobileAds.instance.initialize();
+}
+
+void main() async {
+  // await _initFirebase();
+  // await _initGoogleMobileAds();
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
-
-  Future<InitializationStatus> _initGoogleMobileAds() {
-    // TODO: Initialize Google Mobile Ads SDK
-    return MobileAds.instance.initialize();
-  }
 
   // This widget is the root of your application.
   @override
@@ -26,15 +38,13 @@ class MyApp extends StatelessWidget {
       title: 'Logat',
       theme: ThemeData(
         brightness: Brightness.light,
-        primarySwatch: Colors.blue,
-        primaryColor: Colors.blue[800],
         useMaterial3: true,
+        colorSchemeSeed: Colors.blue[800],
       ),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
-        primarySwatch: Colors.blue,
-        primaryColor: Colors.blue[800],
         useMaterial3: true,
+        colorSchemeSeed: Colors.blue[800],
       ),
       themeMode: ThemeMode.system,
       home: const MyHomePage(title: 'Logat',),
@@ -83,6 +93,16 @@ class _MyHomePageState extends State<MyHomePage> {
     return rawIndex;
   }
 
+  void _getImage() async {
+    final ImagePicker picker = ImagePicker();
+    final List<XFile> images = await picker.pickMultiImage();
+    for (int i = 0; i < images.length; i++) {
+      final exif = await Exif.fromPath(images[i].path!);
+      final latlong = await exif.getLatLong();
+      print("${latlong?.latitude}, ${latlong?.longitude}");
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -118,30 +138,6 @@ class _MyHomePageState extends State<MyHomePage> {
         myLocationEnabled: true,
         myLocationButtonEnabled: false,
       ),
-      // Row(
-      //   children: const [
-      //     Expanded(
-      //       child: TabBarView(
-      //         children: [
-      //           Text("List"),
-      //           Text("Map"),
-      //         ],
-      //       ),
-      //     ),
-      //     TabBar(
-      //       tabs: [
-      //         Tab(
-      //           icon: Icon(Icons.list),
-      //         ),
-      //         Tab(
-      //           icon: Icon(Icons.map),
-      //         ),
-      //       ],
-      //     ),
-      //   ],
-      // ),
-      discoverListView(),
-      Container(),
       Container(),
       const Text(
         'My profile',
@@ -178,8 +174,138 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  void _onItemTapped(int index) {
-    if (index != 2) {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: <Widget>[
+          IconButton(
+            icon: const Icon(
+              Icons.notifications,
+              color: Colors.blue,
+            ),
+            tooltip: "Notification",
+            onPressed: () async {
+
+            },
+          ),
+          IconButton(
+            icon: const Icon(
+              Icons.search,
+              color: Colors.blue,
+            ),
+            tooltip: "Search",
+            onPressed: () async {
+
+            },
+          ),
+        ],
+      ),
+      body: Center(
+        child: _widgetOptions.elementAt(_selectedIndex),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        showUnselectedLabels: false,
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.map),
+            label: 'Main',
+          ),
+          // BottomNavigationBarItem(
+          //   icon: Icon(Icons.linear_scale),
+          //   label: 'Points',
+          // ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.add_circle_outline),
+            label: "",
+          ),
+          // BottomNavigationBarItem(
+          //   icon: Icon(Icons.explore),
+          //   label: 'Discover',
+          // ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'You',
+          ),
+        ],
+        currentIndex: _selectedIndex,
+        onTap: showSheet,
+        selectedItemColor: Colors.blue,
+        unselectedItemColor: Colors.grey,
+      ),
+      floatingActionButton: Wrap(
+        direction: Axis.vertical,
+        children: <Widget>[
+          Visibility(
+            visible: _selectedIndex == 0,
+            child: Container(
+                margin: const EdgeInsets.all(10),
+                child: FloatingActionButton(
+                  onPressed: () {
+                    _currentLocation();
+                  },
+                  child: const Icon(Icons.near_me),
+                )
+            ),
+          ),
+          Container(
+              margin: const EdgeInsets.all(10),
+              child: FloatingActionButton(
+                onPressed: () {
+                  _goToTheLake();
+                },
+                child: const Icon(Icons.tune),
+              )
+          ),
+        ],
+      ),
+    );
+  }
+
+  var location = Location();
+  late bool _serviceEnabled;
+  late PermissionStatus _permissionGranted;
+  late LocationData _locationData;
+
+  void _currentLocation() async {
+    final GoogleMapController controller = await _controller.future;
+    LocationData? currentLocation;
+    try {
+      _serviceEnabled = await location.serviceEnabled();
+      if (!_serviceEnabled) {
+        _serviceEnabled = await location.requestService();
+        if (!_serviceEnabled) {
+          return;
+        }
+      }
+
+      _permissionGranted = await location.hasPermission();
+      if (_permissionGranted == PermissionStatus.denied) {
+        _permissionGranted = await location.requestPermission();
+        if (_permissionGranted != PermissionStatus.granted) {
+          return;
+        }
+      }
+
+      currentLocation = await location.getLocation();
+    } on Exception {
+      currentLocation = null;
+    }
+
+    controller.animateCamera(CameraUpdate.newCameraPosition(
+      CameraPosition(
+        bearing: 0,
+        target: LatLng(currentLocation?.latitude as double, currentLocation?.longitude as double),
+        zoom: 17.0,
+      ),
+    ));
+  }
+
+
+  void showSheet(int index) {
+    if (index != 1) {
       setState(() {
         _selectedIndex = index;
       });
@@ -209,105 +335,7 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        actions: <Widget>[
-          IconButton(
-            icon: const Icon(
-              Icons.notifications,
-              color: Colors.blue,
-            ),
-            tooltip: "Notification",
-            onPressed: () async {
-
-            },
-          ),
-          IconButton(
-            icon: const Icon(
-              Icons.search,
-              color: Colors.blue,
-            ),
-            tooltip: "Search",
-            onPressed: () async {
-
-            },
-          ),
-          IconButton(
-            icon: const Icon(
-              Icons.settings,
-              color: Colors.blue,
-            ),
-            tooltip: "Settings",
-            onPressed: () async {
-
-            },
-          ),
-        ],
-      ),
-      body: Center(
-        child: _widgetOptions.elementAt(_selectedIndex),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        showUnselectedLabels: false,
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: 'Follow',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.explore),
-            label: 'Discover',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle_outline),
-            label: "",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.linear_scale),
-            label: 'Points',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        selectedItemColor: Colors.blue,
-        unselectedItemColor: Colors.grey,
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _currentLocation,
-        label: const Text('My Location'),
-        icon: const Icon(Icons.location_on),
-      ),
-    );
-  }
-  void _currentLocation() async {
-    final GoogleMapController controller = await _controller.future;
-    LocationData? currentLocation;
-    var location = Location();
-    try {
-      currentLocation = await location.getLocation();
-    } on Exception {
-      currentLocation = null;
-    }
-
-    controller.animateCamera(CameraUpdate.newCameraPosition(
-      CameraPosition(
-        bearing: 0,
-        target: LatLng(currentLocation?.latitude as double, currentLocation?.longitude as double),
-        zoom: 17.0,
-      ),
-    ));
-  }
-
-
-  void showMessage(BuildContext context, String title, String message) {
+  void showMessage(String title, String message) {
     showDialog(
       context: context,
       builder: (BuildContext context) => AlertDialog(
