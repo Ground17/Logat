@@ -7,22 +7,16 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../../main.dart';
 import '../../utils/utils_login.dart';
 
-class AddEditPostScreen extends StatefulWidget {
+class ShowPostScreen extends StatefulWidget {
   @override
-  _AddEditPostState createState() => _AddEditPostState();
+  _ShowPostState createState() => _ShowPostState();
   // late String docId;
 }
 
-enum AddEditMode {
-  Add, Edit
-}
-
-class _AddEditPostState extends State<AddEditPostScreen> {
+class _ShowPostState extends State<ShowPostScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-
-  var screenMode = AddEditMode.Add;
 
   @override
   void dispose() {
@@ -50,7 +44,7 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                 decoration: const InputDecoration(labelText: 'Title'),
                 validator: (value) {
                   if (value == '') {
-                    return 'Please enter title.';
+                    return 'Please enter your email.';
                   }
                   return null;
                 },
@@ -59,30 +53,6 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                 controller: _descriptionController,
                 maxLength: 10,
                 decoration: const InputDecoration(labelText: 'Description'),
-              ),
-              SizedBox(height: 16.0),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (_formKey.currentState == null || !_formKey.currentState!.validate()) {
-                          return;
-                        }
-
-                        switch (screenMode) {
-                          case AddEditMode.Add:
-
-                            break;
-                          case AddEditMode.Edit:
-
-                            break;
-                        }
-                      },
-                      child: Text('Add/Edit'),
-                    ),
-                  ),
-                ],
               ),
             ],
           ),

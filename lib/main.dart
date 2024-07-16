@@ -1,12 +1,21 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:logat/views/auth/login.dart';
+import 'package:logat/views/auth/init_page.dart';
+import 'package:logat/views/user/profile.dart';
+import 'package:logat/views/post/add_edit_post.dart';
+import 'package:logat/views/test_view.dart';
+import 'package:logat/views/etc/setting.dart';
 import 'package:native_exif/native_exif.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'firebase_options.dart';
 import 'package:logat/ad_helper.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -21,19 +30,82 @@ Future<InitializationStatus> _initGoogleMobileAds() {
   return MobileAds.instance.initialize();
 }
 
+/// The route configuration.
+final GoRouter _router = GoRouter(
+  routes: <RouteBase>[
+    GoRoute(
+      path: '/',
+      builder: (BuildContext context, GoRouterState state) {
+        return FirebaseAuth.instance.currentUser != null ? const MyHomePage(title: 'Logat',) : const InitPage();
+      },
+      routes: <RouteBase>[
+        GoRoute(
+          path: 'login',
+          builder: (BuildContext context, GoRouterState state) {
+            return LoginScreen();
+          },
+        ),
+        GoRoute(
+          path: 'add',
+          builder: (BuildContext context, GoRouterState state) {
+            return AddEditPostScreen();
+          },
+        ),
+        GoRoute(
+          path: 'search',
+          builder: (BuildContext context, GoRouterState state) {
+            return AddEditPostScreen();
+          },
+        ),
+        GoRoute(
+          path: 'home',
+          builder: (BuildContext context, GoRouterState state) {
+            return AddEditPostScreen();
+          },
+        ),
+        GoRoute(
+          path: 'notification',
+          builder: (BuildContext context, GoRouterState state) {
+            return AddEditPostScreen();
+          },
+        ),
+        GoRoute(
+          path: 'setting',
+          builder: (BuildContext context, GoRouterState state) {
+            return AddEditPostScreen();
+          },
+        ),
+      ],
+    ),
+  ],
+);
+
 void main() async {
-  // await _initFirebase();
-  // await _initGoogleMobileAds();
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await _initFirebase();
+    // await _initGoogleMobileAds();
+  } on FirebaseAuthException catch (e) {
+    switch (e.code) {
+      case "operation-not-allowed":
+        print("Anonymous auth hasn't been enabled for this project.");
+        break;
+      default:
+        print("Unknown error.");
+    }
+  }
+
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp.router(
+      routerConfig: _router,
       key: key,
       title: 'Logat',
       theme: ThemeData(
@@ -47,7 +119,6 @@ class MyApp extends StatelessWidget {
         colorSchemeSeed: Colors.blue[800],
       ),
       themeMode: ThemeMode.system,
-      home: const MyHomePage(title: 'Logat',),
     );
   }
 }
@@ -93,6 +164,55 @@ class _MyHomePageState extends State<MyHomePage> {
     return rawIndex;
   }
 
+  var location = Location();
+  late bool _serviceEnabled;
+  late PermissionStatus _permissionGranted;
+  late LocationData _locationData;
+
+  Future<bool> checkLocationAvailable() async {
+    try {
+      _serviceEnabled = await location.serviceEnabled();
+      if (!_serviceEnabled) {
+        _serviceEnabled = await location.requestService();
+        if (!_serviceEnabled) {
+          return false;
+        }
+      }
+
+      _permissionGranted = await location.hasPermission();
+      if (_permissionGranted == PermissionStatus.denied) {
+        _permissionGranted = await location.requestPermission();
+        if (_permissionGranted != PermissionStatus.granted) {
+          return false;
+        }
+      }
+
+      return true;
+    } on Exception {
+      return false;
+    }
+  }
+
+  void _currentLocation() async {
+    final GoogleMapController controller = await _controller.future;
+    LocationData? currentLocation;
+    if (await checkLocationAvailable()) {
+      try {
+        currentLocation = await location.getLocation();
+      } on Exception {
+        currentLocation = null;
+      }
+    }
+
+    controller.animateCamera(CameraUpdate.newCameraPosition(
+      CameraPosition(
+        bearing: 0,
+        target: LatLng(currentLocation?.latitude as double, currentLocation?.longitude as double),
+        zoom: 17.0,
+      ),
+    ));
+  }
+
   void _getImage() async {
     final ImagePicker picker = ImagePicker();
     final List<XFile> images = await picker.pickMultiImage();
@@ -103,9 +223,35 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  late StreamSubscription _intentSub;
+  final _sharedFiles = <SharedMediaFile>[];
+
   @override
   void initState() {
-    super.initState();
+    super.initState();// Listen to media sharing coming from outside the app while the app is in the memory.
+    /// TODO: write code to add images (maximum image: 100)
+    _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen((value) {
+      setState(() {
+        _sharedFiles.clear();
+        _sharedFiles.addAll(value);
+
+        print(_sharedFiles.map((f) => f.toMap()));
+      });
+    }, onError: (err) {
+      print("getIntentDataStream error: $err");
+    });
+
+    // Get the media sharing coming from outside the app while the app is closed.
+    ReceiveSharingIntent.instance.getInitialMedia().then((value) {
+      setState(() {
+        _sharedFiles.clear();
+        _sharedFiles.addAll(value);
+        print(_sharedFiles.map((f) => f.toMap()));
+
+        // Tell the library that we are done processing the intent.
+        ReceiveSharingIntent.instance.reset();
+      });
+    });
 
     _ad = NativeAd(
       adUnitId: AdHelper.nativeAdUnitId,
@@ -139,15 +285,17 @@ class _MyHomePageState extends State<MyHomePage> {
         myLocationButtonEnabled: false,
       ),
       Container(),
-      const Text(
-        'My profile',
-        style: optionStyle,
-      ),
+      ProfileScreen(),
     ];
+
+    location.onLocationChanged.listen((event) {
+
+    });
   }
 
   @override
   void dispose() {
+    _intentSub.cancel();
     _ad?.dispose();
 
     super.dispose();
@@ -200,6 +348,22 @@ class _MyHomePageState extends State<MyHomePage> {
 
             },
           ),
+          Visibility(
+            visible: _selectedIndex == 2,
+            child: IconButton(
+              icon: const Icon(
+                Icons.settings,
+                color: Colors.blue,
+              ),
+              tooltip: "Setting",
+              onPressed: () async {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingScreen()),
+                );
+              },
+            ),
+          )
         ],
       ),
       body: Center(
@@ -243,6 +407,7 @@ class _MyHomePageState extends State<MyHomePage> {
             child: Container(
                 margin: const EdgeInsets.all(10),
                 child: FloatingActionButton(
+                  heroTag: "near_me",
                   onPressed: () {
                     _currentLocation();
                   },
@@ -253,8 +418,13 @@ class _MyHomePageState extends State<MyHomePage> {
           Container(
               margin: const EdgeInsets.all(10),
               child: FloatingActionButton(
+                heroTag: "location_setting",
                 onPressed: () {
-                  _goToTheLake();
+                  // _goToTheLake();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const TestPage(title: 'Test Page',)),
+                  );
                 },
                 child: const Icon(Icons.tune),
               )
@@ -263,46 +433,6 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
     );
   }
-
-  var location = Location();
-  late bool _serviceEnabled;
-  late PermissionStatus _permissionGranted;
-  late LocationData _locationData;
-
-  void _currentLocation() async {
-    final GoogleMapController controller = await _controller.future;
-    LocationData? currentLocation;
-    try {
-      _serviceEnabled = await location.serviceEnabled();
-      if (!_serviceEnabled) {
-        _serviceEnabled = await location.requestService();
-        if (!_serviceEnabled) {
-          return;
-        }
-      }
-
-      _permissionGranted = await location.hasPermission();
-      if (_permissionGranted == PermissionStatus.denied) {
-        _permissionGranted = await location.requestPermission();
-        if (_permissionGranted != PermissionStatus.granted) {
-          return;
-        }
-      }
-
-      currentLocation = await location.getLocation();
-    } on Exception {
-      currentLocation = null;
-    }
-
-    controller.animateCamera(CameraUpdate.newCameraPosition(
-      CameraPosition(
-        bearing: 0,
-        target: LatLng(currentLocation?.latitude as double, currentLocation?.longitude as double),
-        zoom: 17.0,
-      ),
-    ));
-  }
-
 
   void showSheet(int index) {
     if (index != 1) {
@@ -335,11 +465,10 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  void showMessage(String title, String message) {
+  void showMessage(String message) {
     showDialog(
       context: context,
       builder: (BuildContext context) => AlertDialog(
-        title: Text(title),
         content: Text(message),
         actions: <TextButton>[
           TextButton(
