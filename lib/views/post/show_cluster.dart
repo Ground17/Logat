@@ -7,16 +7,16 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../../main.dart';
 import '../../utils/utils_login.dart';
 
-class ShowPostScreen extends StatefulWidget {
-  const ShowPostScreen({Key? key, required this.postId}) : super(key: key);
+class ShowClusterScreen extends StatefulWidget {
+  const ShowClusterScreen({Key? key, required this.clusterId}) : super(key: key);
 
-  final String postId;
+  final String clusterId;
   @override
-  _ShowPostState createState() => _ShowPostState();
+  _ShowClusterState createState() => _ShowClusterState();
   // late String docId;
 }
 
-class _ShowPostState extends State<ShowPostScreen> {
+class _ShowClusterState extends State<ShowClusterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();

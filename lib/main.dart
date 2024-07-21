@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:logat/views/auth/login.dart';
 import 'package:logat/views/auth/init_page.dart';
+import 'package:logat/views/etc/notification.dart';
+import 'package:logat/views/etc/search.dart';
+import 'package:logat/views/post/add_edit_cluster.dart';
+import 'package:logat/views/post/show_cluster.dart';
+import 'package:logat/views/post/show_post.dart';
+import 'package:logat/views/user/block_list.dart';
+import 'package:logat/views/user/edit_profile.dart';
+import 'package:logat/views/user/following_list.dart';
 import 'package:logat/views/user/profile.dart';
 import 'package:logat/views/post/add_edit_post.dart';
 import 'package:logat/views/test_view.dart';
@@ -46,34 +55,93 @@ final GoRouter _router = GoRouter(
           },
         ),
         GoRoute(
-          path: 'add',
-          builder: (BuildContext context, GoRouterState state) {
-            return AddEditPostScreen();
+          path: 'home',
+          redirect: (BuildContext context, GoRouterState state) {
+            return null;
           },
+        ),
+        GoRoute(
+          path: 'user/:userId',
+          builder: (BuildContext context, GoRouterState state) {
+            return ProfileScreen(userId: state.pathParameters['userId'] ?? FirebaseAuth.instance.currentUser?.uid ?? "");
+          },
+          routes: <RouteBase>[
+            GoRoute(
+              path: 'edit',
+              builder: (BuildContext context, GoRouterState state) {
+                return EditProfileScreen();
+              },
+            ),
+          ]
+        ),
+        GoRoute(
+          path: 'post/:mode',
+          builder: (BuildContext context, GoRouterState state) { // state.uri.queryParameters['data'] = [{mode: 'add', }, {mode: 'edit', postId: "asdf"}]
+            switch (state.pathParameters['mode']) {
+              case 'add':
+                return AddEditPostScreen(photoPaths: jsonDecode(state.uri.queryParameters['data'] ?? '[]'),);
+
+              case 'edit':
+                return AddEditPostScreen(photoPaths: jsonDecode(state.uri.queryParameters['data'] ?? '[]'), isAdd: false,);
+
+              default:
+                break;
+            }
+            return ShowPostScreen(postId: state.pathParameters['mode'] ?? "");
+          },
+        ),
+        GoRoute(
+          path: 'cluster/:mode',
+          builder: (BuildContext context, GoRouterState state) { // state.uri.queryParameters['data'] = [{mode: 'add', postId: "asdf"}, {mode: 'edit', postId: "asdf"}]
+            switch (state.pathParameters['mode']) {
+              case 'add':
+                return const AddEditClusterScreen(clusterId: '',);
+
+              default:
+                break;
+            }
+            return ShowClusterScreen(clusterId: state.pathParameters['mode'] ?? "");
+          },
+          routes: <RouteBase>[
+            GoRoute(
+              path: ':edit',
+              builder: (BuildContext context, GoRouterState state) { // state.uri.queryParameters['data'] = [{mode: 'add', postId: "asdf"}, {mode: 'edit', postId: "asdf"}]
+                return AddEditClusterScreen(clusterId: state.pathParameters['mode'] ?? "");
+              },
+            ),
+          ],
         ),
         GoRoute(
           path: 'search',
           builder: (BuildContext context, GoRouterState state) {
-            return AddEditPostScreen();
-          },
-        ),
-        GoRoute(
-          path: 'home',
-          builder: (BuildContext context, GoRouterState state) {
-            return AddEditPostScreen();
+            return const SearchScreen();
           },
         ),
         GoRoute(
           path: 'notification',
           builder: (BuildContext context, GoRouterState state) {
-            return AddEditPostScreen();
+            return const NotificationScreen();
+          },
+        ),
+        GoRoute(
+          path: 'following',
+          builder: (BuildContext context, GoRouterState state) {
+            return const FollowingListScreen();
           },
         ),
         GoRoute(
           path: 'setting',
           builder: (BuildContext context, GoRouterState state) {
-            return AddEditPostScreen();
+            return const SettingScreen();
           },
+          routes: <RouteBase>[
+            GoRoute(
+              path: 'block',
+              builder: (BuildContext context, GoRouterState state) {
+                return const BlockListScreen();
+              },
+            ),
+          ]
         ),
       ],
     ),
@@ -85,7 +153,7 @@ void main() async {
 
   try {
     await _initFirebase();
-    // await _initGoogleMobileAds();
+    await _initGoogleMobileAds();
   } on FirebaseAuthException catch (e) {
     switch (e.code) {
       case "operation-not-allowed":
@@ -236,6 +304,7 @@ class _MyHomePageState extends State<MyHomePage> {
         _sharedFiles.addAll(value);
 
         print(_sharedFiles.map((f) => f.toMap()));
+        Navigator.of(context).push(MaterialPageRoute(builder: (context) => const AddEditPostScreen(photoPaths: [])),); // _sharedFiles
       });
     }, onError: (err) {
       print("getIntentDataStream error: $err");
@@ -247,6 +316,7 @@ class _MyHomePageState extends State<MyHomePage> {
         _sharedFiles.clear();
         _sharedFiles.addAll(value);
         print(_sharedFiles.map((f) => f.toMap()));
+        Navigator.of(context).push(MaterialPageRoute(builder: (context) => const AddEditPostScreen(photoPaths: [])),); // _sharedFiles
 
         // Tell the library that we are done processing the intent.
         ReceiveSharingIntent.instance.reset();
@@ -285,7 +355,7 @@ class _MyHomePageState extends State<MyHomePage> {
         myLocationButtonEnabled: false,
       ),
       Container(),
-      ProfileScreen(),
+      Container(), /// TODO: listview 형식 구현, 데이터는 지도와 같은 데이터 사용
     ];
 
     location.onLocationChanged.listen((event) {
@@ -315,7 +385,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   child: AdWidget(ad: _ad!),
                 );
             } else {
-                // TODO: Get adjusted item index from _getDestinationItemIndex()
+                /// TODO: Get adjusted item index from _getDestinationItemIndex()
                 return const ListTile(title: Text("Examples"),);
             }
         },
@@ -375,7 +445,7 @@ class _MyHomePageState extends State<MyHomePage> {
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
             icon: Icon(Icons.map),
-            label: 'Main',
+            label: 'Map',
           ),
           // BottomNavigationBarItem(
           //   icon: Icon(Icons.linear_scale),
@@ -390,8 +460,8 @@ class _MyHomePageState extends State<MyHomePage> {
           //   label: 'Discover',
           // ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'You',
+            icon: Icon(Icons.list),
+            label: 'List',
           ),
         ],
         currentIndex: _selectedIndex,

@@ -8,6 +8,10 @@ import '../../main.dart';
 import '../../utils/utils_login.dart';
 
 class AddEditPostScreen extends StatefulWidget {
+  const AddEditPostScreen({Key? key, required this.photoPaths, this.isAdd = true,}) : super(key: key);
+
+  final List<String> photoPaths;
+  final bool isAdd;
   @override
   _AddEditPostState createState() => _AddEditPostState();
   // late String docId;

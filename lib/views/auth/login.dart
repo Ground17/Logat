@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -112,7 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (await LoginMethod.signInWithEmail(_emailController.text, _passwordController.text)) {
                               if (!context.mounted) return;
 
-                              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat',)));
+                              context.go('/');
                               return;
                             } else {
                               showMessage("Please check if the Internet is connected and email/password is correct.");
@@ -124,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               if (FirebaseAuth.instance.currentUser != null) { // Sign up 성공하면 거의 무조건 실행됨
                                 if (!context.mounted) return;
 
-                                Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat',)));
+                                context.go('/');
                                 return;
                               }
 
@@ -137,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (await LoginMethod.resetPasswordWithEmail(_emailController.text)) {
                               if (!context.mounted) return;
 
-                              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat',)));
+                              context.go('/');
                             } else {
                               showMessage("Please check if the Internet is connected and try again.");
                             }
@@ -197,7 +198,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (await LoginMethod.signInWithGoogle()) { // Google login
                               if (!context.mounted) return;
 
-                              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat',)));
+                              context.go('/');
                             } else {
                               showMessage("Please check if the Internet is connected and try again.");
                             }
@@ -235,7 +236,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (await LoginMethod.signInWithApple()) { // Apple login
                               if (!context.mounted) return;
 
-                              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat',)));
+                              context.go('/');
                             } else {
                               showMessage("Please check if the Internet is connected and try again.");
                             }
@@ -276,9 +277,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 final userCredential =
                                 await FirebaseAuth.instance.signInAnonymously();
                                 print("Signed in with temporary account.");
-
                                 if (!context.mounted) return;
-                                Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat',)));
+
+                                context.go('/');
                               } catch (e) {
                                 showMessage("Please check if the Internet is connected and try again.");
                                 print(e);

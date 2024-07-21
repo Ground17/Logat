@@ -9,6 +9,9 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../../main.dart';
 
 class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({Key? key, required this.userId}) : super(key: key);
+
+  final String userId;
   @override
   _ProfileScreenState createState() => _ProfileScreenState();
 }
