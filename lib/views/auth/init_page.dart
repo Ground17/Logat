@@ -1,7 +1,7 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:hive/hive.dart';
+import 'package:logat/main.dart';
 
 import '../etc/webview.dart';
 
@@ -30,25 +30,32 @@ class _InitPageState extends State<InitPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        minimum: EdgeInsets.all(20),
+        minimum: const EdgeInsets.all(20),
         child: Column(
           children: [
-            Row(),
-            Text("Logat"),
-            Text("Logat is a service that uses device location information to record and share your daily life as simply as possible.\n"
+            SizedBox(height: 10,),
+            const Row(
+              children: [
+                Image(
+                  image: AssetImage('assets/logat_logo.png',),
+                  height: 48.0,
+                ),
+                SizedBox(width: 10,),
+                Text("Logat", style: TextStyle(fontSize: 24),),
+              ],
+            ),
+            SizedBox(height: 10,),
+            const Text("Logat is a service that uses device location information to record and share your daily life as simply as possible.\n"
                 "Location information allows you to write Logat more colorfully, but it is not required. You can freely adjust how to write location information in settings within the application.\n\n"
                 "To start, please read and agree with the following."),
             CheckboxListTile(
                 value: isPrivacyPolicy,
-                title: RichText(
-                  text: TextSpan(
-                    text: 'Privacy Policy',
-                    style: const TextStyle(color: Colors.blue),
-                    recognizer: TapGestureRecognizer()
-                      ..onTap = () {
-                        print('Privacy Policy');
-                        Navigator.of(context).push(MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/privacy_policy")));
-                      })),
+                title: GestureDetector(
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/privacy_policy")));
+                  },
+                  child: const Text('Privacy Policy', style: TextStyle(color: Colors.blue),),
+                ),
                 onChanged: (value) {
                   setState(() {
                     isPrivacyPolicy = value;
@@ -56,32 +63,43 @@ class _InitPageState extends State<InitPage> {
                 }),
             CheckboxListTile(
               value: isTermsOfUse,
-              title: RichText(
-                text: TextSpan(
-                  text: 'Terms of Use',
-                  style: const TextStyle(color: Colors.blue),
-                  recognizer: TapGestureRecognizer()
-                    ..onTap = () {
-                      print('Terms of Use');
-                      Navigator.of(context).push(MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/terms_of_use")));
-                  })),
+              title: GestureDetector(
+                onTap: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/terms_of_use")));
+                },
+                child: const Text('Terms of Use', style: TextStyle(color: Colors.blue),),
+              ),
               onChanged: (value) {
                 setState(() {
                   isTermsOfUse = value;
                 });
-              }),
-            ElevatedButton(
-              style: ButtonStyle(
-                  backgroundColor: (isPrivacyPolicy ?? false) && (isTermsOfUse ?? false) ? WidgetStateProperty.all<Color>(Colors.blue) : WidgetStateProperty.all<Color>(Colors.grey),
-              ),
-              onPressed: () {
-                if ((isPrivacyPolicy ?? false) && (isTermsOfUse ?? false)) {
-                  context.go('/login');
-                }
-              },
-              child: new Text('I got it!',
-                  style: new TextStyle(fontSize: 20.0, color: Colors.white)),
+              }
             ),
+            Container(
+              padding: const EdgeInsets.all(8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ButtonStyle(
+                          backgroundColor: (isPrivacyPolicy ?? false) && (isTermsOfUse ?? false) ? WidgetStateProperty.all<Color>(Theme.of(context).primaryColor) : WidgetStateProperty.all<Color>(Colors.grey),
+                        ),
+                        onPressed: () async {
+                          if ((isPrivacyPolicy ?? false) && (isTermsOfUse ?? false)) {
+                            Box box = Hive.box("setting");
+                            await box.put('initial', false);
+
+                            // Navigator.of(this.context).pushReplacement(MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat')),);
+                            context.go('/initial');
+                          }
+                        },
+                        child: const Text('I got it!',
+                            style: TextStyle(fontSize: 20.0, color: Colors.white)),
+                      )
+                    )
+                  ]
+                )
+            )
           ],
         ),
       ),

@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../../main.dart';
 
 class FollowingListScreen extends StatefulWidget {
   const FollowingListScreen({Key? key}) : super(key: key);
@@ -32,9 +31,9 @@ class _FollowingListScreenState extends State<FollowingListScreen> {
         title: const Text("Settings", style: TextStyle(color: Colors.white),),
       ),
       body: ListView(
-        padding: EdgeInsets.fromLTRB(0, 10, 0, 0),
+        padding: const EdgeInsets.fromLTRB(0, 10, 0, 0),
         shrinkWrap: true,
-        children: [
+        children: const [
 
         ],
       ),

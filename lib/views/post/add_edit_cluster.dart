@@ -1,16 +1,11 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
-import '../../main.dart';
-import '../../utils/utils_login.dart';
 
 class AddEditClusterScreen extends StatefulWidget {
-  const AddEditClusterScreen({Key? key, required this.clusterId}) : super(key: key);
+  const AddEditClusterScreen({Key? key, required this.clusterId, required this.postIds}) : super(key: key);
 
   final String clusterId;
+  final List<String> postIds;
   @override
   _ShowClusterState createState() => _ShowClusterState();
   // late String docId;
@@ -33,7 +28,7 @@ class _ShowClusterState extends State<AddEditClusterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Log in'),
+        title: const Text('Log in'),
       ),
       body: Form(
         key: _formKey,

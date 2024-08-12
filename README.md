@@ -1,66 +1,16 @@
-# Logat
-It's a Flutter Application. And it contains firebase firestore, storage, hosting, functions, etc...
+# logat
 
-## You can download!
-- [Android Play Store]()
-- [Apple App Store]()
+A new Flutter project.
 
-## To-do list
-- [ ] notification functions
+## Getting Started
 
-## App.js (contains function/class component)
-- Main (function component) -> function component that binds initial screen in tabbar form after login. function related to universal link, deep link also added.
-- App (class component) -> functions that bind all screens, including the main component described above.
+This project is a starting point for a Flutter application.
 
-## assets/screens (contains almost class component)
-- AddList
-    - to add log based on photo in your device
+A few resources to get you started if this is your first Flutter project:
 
-- EditProfile
-    - to edit users' profileURL, nickname...
+- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
+- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
 
-- Following
-    - to list up users' following people (not follower people)
-
-- Feed
-    - to view other users' logs
-
-- Language
-    - to change language
-
-- Login
-    - to log in
-
-- Profile
-    - to view profile of users
-
-- Notification
-    - to notify
-
-- ResetPassword
-    - for password to reset
-
-- Search
-    - to search other users
-
-- ShowScreen
-    - to view photos and logation of them
-
-- SignUp
-    - to sign up
-
-- UserSetting
-    - to allow users to log out, delete account, and so on
-
-- Utils
-    - to provide functions like translate, style, purchase, and so on
-
-## assets/translations
-Logation currently supports Korean, English, Japanese, Chinese, Spanish, Portuguese, French, and German. Non-Korean and English languages rely on Google Translation and Papago(ⓒ NAVER Corp.). It is a great help to us if you participate in the translation through issue or full request!
-
-## public
-directory related to firebase hosting. Our website is made by it.
-[Logation Official Website](https://travelog-4e274.web.app/)
-
-## functions
-directory related to firebase functions. It'll be used for tasks that require stability, such as in-app purchases.
+For help getting started with Flutter development, view the
+[online documentation](https://docs.flutter.dev/), which offers tutorials,
+samples, guidance on mobile development, and a full API reference.

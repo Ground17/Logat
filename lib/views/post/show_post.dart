@@ -1,11 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
-import '../../main.dart';
-import '../../utils/utils_login.dart';
 
 class ShowPostScreen extends StatefulWidget {
   const ShowPostScreen({Key? key, required this.postId}) : super(key: key);
@@ -33,7 +27,7 @@ class _ShowPostState extends State<ShowPostScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Log in'),
+        title: const Text('Log in'),
       ),
       body: Form(
         key: _formKey,

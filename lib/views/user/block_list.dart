@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../../main.dart';
 
 class BlockListScreen extends StatefulWidget {
   const BlockListScreen({Key? key}) : super(key: key);
@@ -33,9 +32,9 @@ class _BlockListScreenState extends State<BlockListScreen> {
         title: const Text("Settings", style: TextStyle(color: Colors.white),),
       ),
       body: ListView(
-        padding: EdgeInsets.fromLTRB(0, 10, 0, 0),
+        padding: const EdgeInsets.fromLTRB(0, 10, 0, 0),
         shrinkWrap: true,
-        children: [
+        children: const [
 
         ],
       ),
