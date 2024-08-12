@@ -236,7 +236,7 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                         _logData[i].address = _addressControllers[i].text;
                       }
 
-                      Box box = Hive.box<LocData>('log');
+                      Box box = await Hive.openBox<LocData>('log');
                       await box.addAll(_logData);
                     }) ?? false;
                     if (context.mounted && shouldPop) {

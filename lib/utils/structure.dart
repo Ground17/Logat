@@ -23,7 +23,7 @@ class LocData extends HiveObject {
   @HiveField(5)
   String? path;
 
-  LocData({required String title, required String description, required String date, required Loc location, required String address, required String path});
+  LocData({required this.title, required this.description, required this.date, required this.location, required this.address, required this.path});
 
   @override
   String toString() => "$title, $description, $date, $location, $address $path";
@@ -46,7 +46,7 @@ class Loc extends HiveObject {
   @HiveField(1)
   double? long;
 
-  Loc({required double lat, required double long});
+  Loc({required this.lat, required this.long});
 
   @override
   String toString() => "lat: $lat, long: $long";

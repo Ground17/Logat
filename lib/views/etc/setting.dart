@@ -24,10 +24,10 @@ class _SettingScreenState extends State<SettingScreen> {
   // bool isAndroidLogin = false;
   // bool isIOSLogin = false;
 
-  Box box = Hive.box("setting");
   late bool _isChecked = false;
 
-  void initStateAsync() {
+  void initStateAsync() async {
+    Box box = await Hive.openBox("setting");
     setState(() {
       _isChecked = box.get('location_autosave', defaultValue: false);
     });
@@ -65,7 +65,7 @@ class _SettingScreenState extends State<SettingScreen> {
             trailing: Platform.isAndroid ? Switch(
               value: _isChecked,
               onChanged: (value) async {
-                box = Hive.box("setting");
+                Box box = await Hive.openBox("setting");
                 await box.put('location_autosave', value ?? false);
                 setState(() {
                   _isChecked = value;
@@ -75,7 +75,7 @@ class _SettingScreenState extends State<SettingScreen> {
               value: _isChecked,
               activeColor: CupertinoColors.activeBlue,
               onChanged: (bool? value) async {
-                box = Hive.box("setting");
+                Box box = await Hive.openBox("setting");
                 await box.put('location_autosave', value ?? false);
                 setState(() {
                   _isChecked = value ?? false;

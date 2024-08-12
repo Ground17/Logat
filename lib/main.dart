@@ -54,7 +54,7 @@ final GoRouter _router = GoRouter(
       builder: (BuildContext context, GoRouterState state) {
         // return FirebaseAuth.instance.currentUser != null ? const MyHomePage(title: 'Logat',) : const InitPage();
         Box box = Hive.box("setting");
-        return box.get('initial') != null ? const MyHomePage(title: 'Logat',) : const InitPage();
+        return box.get('initial', defaultValue: false) ? const MyHomePage(title: 'Logat',) : const InitPage();
       },
       routes: <RouteBase>[
         // GoRoute(
@@ -143,7 +143,7 @@ final GoRouter _router = GoRouter(
       builder: (BuildContext context, GoRouterState state) {
         // return FirebaseAuth.instance.currentUser != null ? const MyHomePage(title: 'Logat',) : const InitPage();
         Box box = Hive.box("setting");
-        return box.get('initial') != null ? const MyHomePage(title: 'Logat',) : const InitPage();
+        return box.get('initial', defaultValue: false) ? const MyHomePage(title: 'Logat',) : const InitPage();
       },
     )
   ],
@@ -170,7 +170,7 @@ void main() async {
   Hive.registerAdapter(LocAdapter());
 
   await Hive.openBox("setting");
-  await Hive.openBox<LocData>("log");
+
   runApp(const MyApp());
 }
 
@@ -538,16 +538,19 @@ class _MyHomePageState extends State<MyHomePage> {
 
 
     Box settingBox = Hive.box('setting');
-    Box logBox = Hive.box('setting');
     bool autosave = settingBox.get("location_autosave", defaultValue: false);
+    print(autosave);
 
     if (autosave) {
       checkLocationAvailable().then((value) {
         if (value) {
+          print(true);
           _locationSub = location.onLocationChanged.listen((event) async {
             DateTime now = DateTime.now();
             Duration delta = now.difference(recentSaved);
-            if (delta.inMinutes > 10) {
+            print(delta.inMinutes);
+            if (delta.inMinutes > 9) {
+              Box logBox = await Hive.openBox<LocData>('log');
               await logBox.add(LocData(
                 title: now.toIso8601String(),
                 description: '',
@@ -556,6 +559,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 address: '',
                 path: '',
               ));
+              recentSaved = now;
+              _makeMarkers();
             }
           });
         }
@@ -585,9 +590,10 @@ class _MyHomePageState extends State<MyHomePage> {
   static const TextStyle optionStyle =
   TextStyle(fontSize: 30, fontWeight: FontWeight.bold);
 
-  void _makeMarkers() {
-    Box box = Hive.box<LocData>('log');
+  void _makeMarkers() async {
+    Box<LocData> box = await Hive.openBox<LocData>('log');
     final values = box.values;
+    print(values);
 
     _markers.clear();
     for (final value in values) {

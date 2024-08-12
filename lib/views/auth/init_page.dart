@@ -86,8 +86,8 @@ class _InitPageState extends State<InitPage> {
                         ),
                         onPressed: () async {
                           if ((isPrivacyPolicy ?? false) && (isTermsOfUse ?? false)) {
-                            Box box = Hive.box("setting");
-                            await box.put('initial', false);
+                            Box box = await Hive.openBox("setting");
+                            await box.put('initial', true);
 
                             // Navigator.of(this.context).pushReplacement(MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat')),);
                             context.go('/initial');
