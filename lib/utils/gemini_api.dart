@@ -21,7 +21,7 @@ final coordModel = GenerativeModel(
 );
 
 final getCoord = FunctionDeclaration(
-    'getProperCoordination',
+    'getCoord',
     'Find the proper coordinates of where you need to go by using the given coordinate information.',
     Schema(SchemaType.object, properties: {
       'latitude': Schema(SchemaType.number,
@@ -33,6 +33,27 @@ final getCoord = FunctionDeclaration(
     }, requiredProperties: [
       'latitude',
       'longitude'
+    ]));
+
+final addressModel = GenerativeModel(
+  model: 'gemini-1.5-flash',
+  apiKey: GEMINI_KEYS,
+
+  // Specify the function declaration.
+  tools: [
+    Tool(functionDeclarations: [getAddress])
+  ],
+);
+
+final getAddress = FunctionDeclaration(
+    'getAddress',
+    'Find the proper Address of where you need to go by using the given information.',
+    Schema(SchemaType.object, properties: {
+      'address': Schema(SchemaType.string,
+          description: 'address of where you go. '
+              'Must be a real address'),
+    }, requiredProperties: [
+      'address'
     ]));
 
 final textModel = GenerativeModel(

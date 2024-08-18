@@ -5,13 +5,17 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:location/location.dart';
 import 'package:logat/utils/utils_login.dart';
 
 import 'package:app_settings/app_settings.dart';
+import 'package:logat/views/etc/webview.dart';
 
 
 class SettingScreen extends StatefulWidget {
-  const SettingScreen({Key? key}) : super(key: key);
+  const SettingScreen({Key? key, required this.autosave}) : super(key: key);
+
+  final Function autosave;
 
   @override
   _SettingScreenState createState() => _SettingScreenState();
@@ -25,9 +29,13 @@ class _SettingScreenState extends State<SettingScreen> {
   // bool isIOSLogin = false;
 
   late bool _isChecked = false;
+  late bool _isBackground = false;
+
 
   void initStateAsync() async {
     Box box = await Hive.openBox("setting");
+
+    _isBackground = await Location().isBackgroundModeEnabled();
     setState(() {
       _isChecked = box.get('location_autosave', defaultValue: false);
     });
@@ -61,12 +69,13 @@ class _SettingScreenState extends State<SettingScreen> {
         children: [
           ListTile(
             title: Text("Auto-save logs"),
-            subtitle: Text("It will be reflected after restarting the app."),
+            subtitle: Text("Save the current location locally every 10 minutes."),
             trailing: Platform.isAndroid ? Switch(
               value: _isChecked,
               onChanged: (value) async {
                 Box box = await Hive.openBox("setting");
                 await box.put('location_autosave', value ?? false);
+                widget.autosave(value ?? false);
                 setState(() {
                   _isChecked = value;
                 });
@@ -77,8 +86,31 @@ class _SettingScreenState extends State<SettingScreen> {
               onChanged: (bool? value) async {
                 Box box = await Hive.openBox("setting");
                 await box.put('location_autosave', value ?? false);
+                widget.autosave(value ?? false);
                 setState(() {
                   _isChecked = value ?? false;
+                });
+              },
+            ),
+          ),
+          ListTile(
+            title: Text("Location Background mode"),
+            subtitle: Text("The location feature is also available in the background of the app, and works when the screen is off. However, this feature is not required, and can be changed in the app settings."),
+            trailing: Platform.isAndroid ? Switch(
+              value: _isBackground,
+              onChanged: (value) async {
+                bool result = await Location().enableBackgroundMode(enable: value);
+                setState(() {
+                  _isBackground = value;
+                });
+              },
+            ) : CupertinoSwitch(
+              value: _isBackground,
+              activeColor: CupertinoColors.activeBlue,
+              onChanged: (bool? value) async {
+                bool result = await Location().enableBackgroundMode(enable: value);
+                setState(() {
+                  _isBackground = value ?? false;
                 });
               },
             ),
@@ -89,7 +121,23 @@ class _SettingScreenState extends State<SettingScreen> {
           ),
           ListTile(
             title: Text("About"),
-            onTap: () => showAboutDialog(context: context),
+            onTap: () => showAboutDialog(
+              context: context,
+              children: [
+                ListTile(
+                  title: Text("Privacy Policy"),
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/privacy_policy")));
+                  },
+                ),
+                ListTile(
+                  title: Text("Terms of Use"),
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/terms_of_use")));
+                  },
+                ),
+              ]
+            ),
           ),
         ],
       ),

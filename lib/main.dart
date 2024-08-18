@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 // import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -33,6 +34,7 @@ import 'package:logat/views/etc/setting.dart';
 import 'package:native_exif/native_exif.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:logat/ad_helper.dart';
+import 'package:share_plus/share_plus.dart';
 
 // import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -54,7 +56,10 @@ final GoRouter _router = GoRouter(
       builder: (BuildContext context, GoRouterState state) {
         // return FirebaseAuth.instance.currentUser != null ? const MyHomePage(title: 'Logat',) : const InitPage();
         Box box = Hive.box("setting");
-        return box.get('initial', defaultValue: false) ? const MyHomePage(title: 'Logat',) : const InitPage();
+        if (state.uri.queryParameters['lat'] != null && state.uri.queryParameters['long'] != null) {
+          return box.get('initial', defaultValue: false) ? MyHomePage(lat: state.uri.queryParameters['lat'], long: state.uri.queryParameters['long']) : const InitPage(); // received location -> state.uri.queryParameters['lat'], state.uri.queryParameters['long']
+        }
+        return box.get('initial', defaultValue: false) ? const MyHomePage() : const InitPage();
       },
       routes: <RouteBase>[
         // GoRoute(
@@ -143,7 +148,7 @@ final GoRouter _router = GoRouter(
       builder: (BuildContext context, GoRouterState state) {
         // return FirebaseAuth.instance.currentUser != null ? const MyHomePage(title: 'Logat',) : const InitPage();
         Box box = Hive.box("setting");
-        return box.get('initial', defaultValue: false) ? const MyHomePage(title: 'Logat',) : const InitPage();
+        return box.get('initial', defaultValue: false) ? const MyHomePage() : const InitPage();
       },
     )
   ],
@@ -199,9 +204,10 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({Key? key, required this.title}) : super(key: key);
+  const MyHomePage({Key? key, this.lat, this.long}) : super(key: key);
 
-  final String title;
+  final String? lat;
+  final String? long;
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -303,48 +309,52 @@ class _MyHomePageState extends State<MyHomePage> {
 
   int _catchCount = 0;
 
+  int radar = 1000; // m 단위, radar가 10초에 10m씩 늘어나게 설계
+
   void _startTimer() {
-    _calTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+    int update_second = 1; // 얼마나 업데이트되는지 설정
+    double walking = 1.4 * update_second;
+    double driving = 20.0 * update_second;
+    _calTimer = Timer.periodic(Duration(seconds: update_second), (timer) async {
       // 여기에 10초마다 실행할 코드를 작성. (소규모 위치 업데이트)
+      radar += update_second;
+
       DateTime now = DateTime.now();
 
       int secondsSinceEpoch = now.millisecondsSinceEpoch ~/ 1000;
 
       for (int i = 0; i < enemies.length; i++) {
         if (enemies[i]['route'].length > 0) {
-          while (enemies[i]['route'].length > 0) {
-            if (secondsSinceEpoch > enemies[i]['route']['end_time']) {
-              enemies[i]['route'].removeAt(0);
-              continue;
-            }
+          while (enemies[i]['route'].length > 0 && secondsSinceEpoch > enemies[i]['route'][0]['end_time']) {
+            enemies[i]['route'].removeAt(0);
+          }
 
-            int a = secondsSinceEpoch - (enemies[i]['route'][0]['start_time'] as int); int b = (enemies[i]['route'][0]['end_time'] as int) - secondsSinceEpoch; // a : b로 내분
-            if (a == 0) {
-              enemies[i]['coord']['lat'] = enemies[i]['route'][0]['start_lat'];
-              enemies[i]['coord']['long'] = enemies[i]['route'][0]['start_long'];
-            } else if (b == 0) {
-              enemies[i]['coord']['lat'] = enemies[i]['route'][0]['end_lat'];
-              enemies[i]['coord']['long'] = enemies[i]['route'][0]['end_long'];
-            } else {
-              enemies[i]['coord']['lat'] = (a * enemies[i]['route'][0]['end_lat'] + b * enemies[i]['route'][0]['start_lat']) / (a + b);
-              enemies[i]['coord']['long'] = (a * enemies[i]['route'][0]['end_long'] + b * enemies[i]['route'][0]['start_long']) / (a + b);
-            }
+          int a = secondsSinceEpoch - (enemies[i]['route'][0]['start_time'] as int); int b = (enemies[i]['route'][0]['end_time'] as int) - secondsSinceEpoch; // a : b로 내분
+          if (a == 0) {
+            enemies[i]['coord']['lat'] = enemies[i]['route'][0]['start_lat'];
+            enemies[i]['coord']['long'] = enemies[i]['route'][0]['start_long'];
+          } else if (b == 0) {
+            enemies[i]['coord']['lat'] = enemies[i]['route'][0]['end_lat'];
+            enemies[i]['coord']['long'] = enemies[i]['route'][0]['end_long'];
+          } else {
+            enemies[i]['coord']['lat'] = (a * enemies[i]['route'][0]['end_lat'] + b * enemies[i]['route'][0]['start_lat']) / (a + b);
+            enemies[i]['coord']['long'] = (a * enemies[i]['route'][0]['end_long'] + b * enemies[i]['route'][0]['start_long']) / (a + b);
           }
         } else {
           double d = calculateDistance(enemies[i]['coord']['lat'], enemies[i]['coord']['long'], myLatitude, myLongitude);
-          double distanceTime = enemies[i]['mode'] == "Walking" ? d / 1.38 : d / 16.67;
 
-          double a = enemies[i]['mode'] == "Walking" ? 1.38 : 16.67; double b = distanceTime - a; // a : b로 내분
+          double a = enemies[i]['mode'] == "Walking" ? walking : driving;
+          double b = d - a;
 
           if (b >= 0) {
-            enemies[i]['coord']['lat'] = (a * myLatitude + b * enemies[i]['coord']['lat']) / (a + b);
-            enemies[i]['coord']['long'] = (a * myLongitude + b * enemies[i]['coord']['long']) / (a + b);
+            enemies[i]['coord']['lat'] = (a * myLatitude + b * enemies[i]['coord']['lat']) / d;
+            enemies[i]['coord']['long'] = (a * myLongitude + b * enemies[i]['coord']['long']) / d;
           }
         }
 
         _makeMarkers();
 
-        if (calculateDistance(enemies[i]['coord']['lat'], enemies[i]['coord']['long'], myLatitude, myLongitude) < 1000) { // 잡힐 경우 (1km 이내)
+        if (calculateDistance(enemies[i]['coord']['lat'], enemies[i]['coord']['long'], myLatitude, myLongitude) < radar) { // 잡힐 경우 (radar 반경 이내)
           _catchCount++;
           if (_catchCount > 1) {
             _endGame();
@@ -365,6 +375,8 @@ class _MyHomePageState extends State<MyHomePage> {
       if (await checkLocationAvailable()) {
         final me = await location.getLocation();
 
+        // getGeocoding();
+
         for (int i = 0; i < enemies.length; i++) {
           final chat = coordModel.startChat();
           final prompt = 'You are a finder of someone. Find the coordinates of where you need to go by using the given coordinate information below. Think step by step.'
@@ -381,16 +393,20 @@ class _MyHomePageState extends State<MyHomePage> {
             try {
               switch (functionCall.name) {
                 case 'getCoord':
+                  print("${enemies[i]['coord']!['lat']}, ${enemies[i]['coord']!['long']}, ${functionCall.args['latitude']}, ${functionCall.args['longitude']}");
                   if (functionCall.args['latitude'] != null && functionCall.args['longitude'] != null ) {
                     enemies[i]['route'] = await getDirection(enemies[i]['coord']!['lat'], enemies[i]['coord']!['long'], functionCall.args['latitude'] as double, functionCall.args['longitude'] as double, mode: enemies[i]['mode'] as String);
                   } else {
                     enemies[i]['route'] = await getDirection(enemies[i]['coord']!['lat'], enemies[i]['coord']!['long'], me.latitude ?? 0, me.longitude ?? 0, mode: enemies[i]['mode'] as String);
                   }
+                  // print("route");
+                  // print(enemies[i]['route']);
                   break;
                 default:
                   break;
               }
             } catch (e) {
+              print(e);
               enemies[i]['route'] = [];
             }
           }
@@ -535,20 +551,21 @@ class _MyHomePageState extends State<MyHomePage> {
     // );
     //
     // _ad?.load();
-
-
-    Box settingBox = Hive.box('setting');
-    bool autosave = settingBox.get("location_autosave", defaultValue: false);
+    Box box = Hive.box("setting");
+    bool autosave = box.get("location_autosave", defaultValue: false);
     print(autosave);
 
+    checkAutoSave(autosave);
+  }
+
+  void checkAutoSave(bool autosave) async {
     if (autosave) {
       checkLocationAvailable().then((value) {
         if (value) {
-          print(true);
           _locationSub = location.onLocationChanged.listen((event) async {
             DateTime now = DateTime.now();
             Duration delta = now.difference(recentSaved);
-            print(delta.inMinutes);
+            // print(delta.inMinutes);
             if (delta.inMinutes > 9) {
               Box logBox = await Hive.openBox<LocData>('log');
               await logBox.add(LocData(
@@ -565,10 +582,9 @@ class _MyHomePageState extends State<MyHomePage> {
           });
         }
       });
+    } else {
+      _locationSub?.cancel();
     }
-
-    _makeMarkers();
-    _currentLocation(moveCamera: true);
   }
 
   DateTime recentSaved = DateTime.now();
@@ -593,7 +609,6 @@ class _MyHomePageState extends State<MyHomePage> {
   void _makeMarkers() async {
     Box<LocData> box = await Hive.openBox<LocData>('log');
     final values = box.values;
-    print(values);
 
     _markers.clear();
     for (final value in values) {
@@ -601,16 +616,11 @@ class _MyHomePageState extends State<MyHomePage> {
       _markers.add(
         Marker(
           markerId: MarkerId(value.key.toString()),
-          // onTap: () {
-          // },
+          onTap: () {
+            showSheetWithLocation(title: value.title ?? "", description: value.description ?? "", address: value.address ?? "", location: value.location ?? Loc(lat: 0, long: 0), date: value.date ?? "", path: value.path, key: value.key);
+          },
           onDragEnd: null,
           position: LatLng(value.location?.lat ?? _latitude, value.location?.long ?? _longitude),
-          infoWindow: InfoWindow(title: value.title, snippet: "${value.description != "" ? "${value.description}\n" : ""}${value.address != "" ? "${value.address}\n" : ""}${value.date}", onTap: () {
-            showMessageWithCancel("Do you want to delete this log?", () {
-              box.delete(value.key);
-              _makeMarkers();
-            });
-          }),
         )
       );
     }
@@ -620,7 +630,7 @@ class _MyHomePageState extends State<MyHomePage> {
         Marker(
           markerId: MarkerId("enemy #${enemy.hashCode}"),
           position: LatLng(enemy['coord']['lat'], enemy['coord']['long']),
-          rotation: 180.0,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         )
       );
     }
@@ -707,6 +717,33 @@ class _MyHomePageState extends State<MyHomePage> {
         onMapCreated: (GoogleMapController controller) {
           _controller = Completer<GoogleMapController>();
           _controller.complete(controller);
+
+          if (widget.lat != null && widget.long != null) {
+            try {
+              _markers.add(
+                  Marker(
+                    markerId: MarkerId("Received"),
+                    position: LatLng(double.parse(widget.lat!), double.parse(widget.long!)),
+                    onTap: () {
+                      showSheetWithLocation(title: "Received Location", location: Loc(lat: double.parse(widget.lat!), long: double.parse(widget.long!)),);
+                    },
+                  )
+              );
+              controller.animateCamera(CameraUpdate.newCameraPosition(
+                CameraPosition(
+                  bearing: 0,
+                  target: LatLng(double.parse(widget.lat!), double.parse(widget.long!)),
+                  zoom: 13.0,
+                ),
+              ));
+              showSheetWithLocation(title: "Received Location", location: Loc(lat: double.parse(widget.lat!), long: double.parse(widget.long!)),);
+            } catch (e) {
+              print(e);
+            }
+          } else {
+            _currentLocation(moveCamera: true);
+          }
+          _makeMarkers();
         },
         markers: Set.from(_markers),
         onLongPress: (coord) {
@@ -746,7 +783,18 @@ class _MyHomePageState extends State<MyHomePage> {
         children: <Widget>[
           Container(
               margin: const EdgeInsets.all(10),
-              child: FloatingActionButton(
+              child: FloatingActionButton.small(
+                heroTag: "share",
+                onPressed: () {
+                  Share.share("Please tell me where you are. I'm in here:\n"
+                      "https://logat-release.web.app?lat=$_latitude&long=$_longitude");
+                },
+                child: const Icon(Icons.share),
+              )
+          ),
+          Container(
+              margin: const EdgeInsets.all(10),
+              child: FloatingActionButton.small(
                 heroTag: "near_me",
                 onPressed: () {
                   _currentLocation(moveCamera: true);
@@ -756,7 +804,7 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
           Container(
               margin: const EdgeInsets.all(10),
-              child: FloatingActionButton(
+              child: FloatingActionButton.small(
                 heroTag: "add",
                 onPressed: () {
                   showSheet();
@@ -766,12 +814,12 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
           Container(
               margin: const EdgeInsets.all(10),
-              child: FloatingActionButton(
+              child: FloatingActionButton.small(
                 heroTag: "setting",
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => SettingScreen()),
+                    MaterialPageRoute(builder: (context) => SettingScreen(autosave: checkAutoSave)),
                   );
                 },
                 child: const Icon(Icons.settings),
@@ -838,7 +886,7 @@ class _MyHomePageState extends State<MyHomePage> {
       context: context,
       builder: (BuildContext _context) {
         return SizedBox(
-          height: 200,
+          height: 250,
           child: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -933,7 +981,101 @@ class _MyHomePageState extends State<MyHomePage> {
                   },
                 ),
                 ElevatedButton(
-                  child: const Text('Hide-and-seek with AI'),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome),
+                      SizedBox(width: 10,),
+                      Text('Get next place recommendation'),
+                    ],
+                  ),
+                  onPressed: () async {
+                    _context.pop();
+
+                    showMessageWithCancel("We recommend the following places by providing the existing visit records to Google Gemini and Google Maps. Do you want to continue?", () async {
+                      final chat = addressModel.startChat();
+                      final markers_input = [];
+
+                      Box<LocData> box = await Hive.openBox<LocData>('log');
+                      List<LocData> values = box.values.toList();
+
+                      if (values.isEmpty) {
+                        showMessage("No data is available.");
+                        return;
+                      }
+
+                      for (int i = 0; i < 3; i++) {
+                        if (i >= values.length) {
+                          break;
+                        }
+
+                        String temp = "";
+                        int index = -1;
+                        for (int j = 0; j < values.length; j++) {
+                          if ((values[j].date?.compareTo(temp) ?? 0) > 0) {
+                            temp = values[j].date ?? "";
+                            index = j;
+                          }
+                        }
+
+                        if (index != -1) {
+                          final data = await getReverseGeocoding(values[index].location?.lat ?? 0, values[index].location?.long ?? 0);
+                          markers_input.add("${data.isNotEmpty ? '${data[0]['text']} ' : ''}(latitude: ${values[index].location?.lat ?? 0}, longitude: ${values[index].location?.long ?? 0})");
+                          values.removeAt(index);
+                        }
+                      }
+
+                      final prompt = 'You are a traveler. Find the address of where you need to go next by using the given information below. Think step by step.'
+                          'previous location you visited: $markers_input'
+                          'current location of you: (latitude: $_latitude, long: $_longitude)';
+
+                      var response = await chat.sendMessage(Content.text(prompt));
+
+                      final functionCalls = response.functionCalls.toList();
+                      if (functionCalls.isNotEmpty) {
+                        final functionCall = functionCalls.first;
+                        try {
+                          switch (functionCall.name) {
+                            case 'getAddress':
+                              if (functionCall.args['address'] != null) {
+                                final data = await getGeocoding(functionCall.args['address'].toString());
+                                if (data.isNotEmpty) {
+                                  setState(() {
+                                    _markers.add(
+                                        Marker(
+                                          markerId: MarkerId("Recommended"),
+                                          position: LatLng(data[0]['lat'] as double, data[0]['long'] as double),
+                                          onTap: () {
+                                            showSheetWithLocation(title: "Recommended Location", location: Loc(lat: data[0]['lat'] as double, long: data[0]['long'] as double),);
+                                          },
+                                          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+                                        )
+                                    );
+                                  });
+                                  break;
+                                }
+                              }
+                            default:
+                              showMessage("An error occurred while calling the model.");
+                              break;
+                          }
+                        } catch (e) {
+                          print(e);
+                          showMessage("An error occurred while calling the model.");
+                        }
+                      }
+                    });
+                  },
+                ),
+                ElevatedButton(
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome),
+                      SizedBox(width: 10,),
+                      Text('Hide-and-seek with AI'),
+                    ],
+                  ),
                   onPressed: () async {
                     if (await checkLocationAvailable()) {
                       Navigator.pop(_context);
@@ -955,6 +1097,76 @@ class _MyHomePageState extends State<MyHomePage> {
                       showMessage("I can't find the current location, please check the location settings.");
                     }
                   },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void showSheetWithLocation({required String title, String description="", String address="", required Loc location, String date="", String? path="", dynamic key}) async {
+    if (address == "") {
+      try {
+        final data = await getReverseGeocoding(location.lat ?? 0.0, location.long ?? 0.0);
+        if (data.isNotEmpty) {
+          address = data[0]['text']!;
+        }
+      } catch (e) {
+        print(e);
+      }
+    }
+
+    if (date == "") {
+      date = DateTime.now().toIso8601String();
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext _context) {
+        return SizedBox(
+          height: 250,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                ListTile(
+                  leading: Visibility(visible: (path ?? "") != "", child: Image.file(File(path!), width: 50, height: 50),),
+                  title: Text(title),
+                  subtitle: Text("$description\n$address\n$date"),
+                  dense: true,
+                  isThreeLine: true,
+                ),
+                ListTile(
+                  title: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.delete),
+                        onPressed: () {
+                          showMessageWithCancel("Do you want to delete this log?", () async {
+                            _context.pop();
+                            if (key != null) {
+                              Box<LocData> box = await Hive.openBox<LocData>('log');
+                              box.delete(key);
+                            }
+                            _makeMarkers();
+                          });
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.share),
+                        onPressed: () {
+                          Share.share("Please tell me where you are. I'm in here:\n"
+                              "https://logat-release.web.app?lat=${location.lat}&long=${location.long}");
+                        },
+                      ),
+                    ],
+                  ),
+                  dense: true,
                 ),
               ],
             ),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hive/hive.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../utils/gemini_api.dart';
 import '../../utils/maps_api.dart';
@@ -227,18 +228,37 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                     backgroundColor: WidgetStateProperty.all<Color>(Theme.of(context).primaryColor),
                   ),
                   onPressed: () async {
-                    final bool shouldPop = await showMessageWithCancel("Do you want to save on local device?\n(Photos will not be saved)", () async {
-                      /// TODO: Save on hive
+                    final bool shouldPop = await showMessageWithCancel("Do you want to save on local device?", () async {
+                      Directory appDocDir = await getApplicationDocumentsDirectory();
+                      String appDocPath = appDocDir.path;
 
                       for (int i = 0; i < _logData.length; i++) {
                         _logData[i].title = _titleControllers[i].text;
                         _logData[i].description = _descriptionControllers[i].text;
                         _logData[i].address = _addressControllers[i].text;
+
+                        print(_logData[i].path);
+
+                        // Path가 cache 안에 있으면 document directory에 저장
+                        if (_logData[i].path != null && _logData[i].path!.contains("cache")) {
+                          String? filename = _logData[i].path!.split('/').lastOrNull;
+                          File _image = File(_logData[i].path!);
+
+                          if (filename != null) {
+                            final File localImage = await _image.copy('$appDocPath/$filename');
+                            _logData[i].path = '$appDocPath/$filename';
+                            print('$appDocPath/$filename');
+                          }
+                        }
                       }
 
-                      Box box = await Hive.openBox<LocData>('log');
+                      Box<LocData> box = await Hive.openBox<LocData>('log');
                       await box.addAll(_logData);
+
+                      print("1");
+                      print(box.values);
                     }) ?? false;
+
                     if (context.mounted && shouldPop) {
                       Navigator.pop(context, true);
                     }
@@ -284,9 +304,9 @@ class _AddEditPostState extends State<AddEditPostScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              await f();
               Navigator.pop(context, true);
-              f();
             },
             child: const Text('OK'),
           ),

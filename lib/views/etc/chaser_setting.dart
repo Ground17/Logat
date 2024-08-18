@@ -24,7 +24,7 @@ class _ChaserSettingState extends State<ChaserSettingScreen> {
   final List<Map<String, Object>> _enemies = [{'mode': 'Driving'}];
   List<String> dropDownList = ['Driving', 'Walking'];
 
-  int _distance = 60;
+  int _distance = 10;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +38,7 @@ class _ChaserSettingState extends State<ChaserSettingScreen> {
         children: [
           const ListTile(
             leading: Icon(Icons.auto_awesome),
-            title: Text("If the AI enters within 1km, it will be Game Over."),
+            title: Text("The game will end when the AI approaches to you. The area of the AI starts at 1 km and increases by 1 m per second."),
           ),
           ListTile(
             title: Row(
@@ -121,7 +121,7 @@ class _ChaserSettingState extends State<ChaserSettingScreen> {
                   icon: const Icon(Icons.remove),
                   onPressed: () {
                     setState(() {
-                      if (_distance > 20) {
+                      if (_distance > 10) {
                         _distance--;
                       }
                     });

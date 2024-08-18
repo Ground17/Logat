@@ -46,7 +46,10 @@ class _InitPageState extends State<InitPage> {
             ),
             SizedBox(height: 10,),
             const Text("Logat is a service that uses device location information to record and share your daily life as simply as possible.\n"
-                "Location information allows you to write Logat more colorfully, but it is not required. You can freely adjust how to write location information in settings within the application.\n\n"
+                "Location information allows you to write Logat more colorfully, but it is not required. You can freely adjust how to write location information in settings within the application.\n"
+                "The location feature is also available in the background of the app, and works when the screen is off. However, this feature is not required, and can be changed in the app settings."
+                "The default of background is off.\n"
+                "In addition, the app is using the Google Maps API to search for addresses and routes that users want.\n\n"
                 "To start, please read and agree with the following."),
             CheckboxListTile(
                 value: isPrivacyPolicy,
