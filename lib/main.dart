@@ -56,10 +56,12 @@ final GoRouter _router = GoRouter(
       builder: (BuildContext context, GoRouterState state) {
         // return FirebaseAuth.instance.currentUser != null ? const MyHomePage(title: 'Logat',) : const InitPage();
         Box box = Hive.box("setting");
-        if (state.uri.queryParameters['lat'] != null && state.uri.queryParameters['long'] != null) {
-          return box.get('initial', defaultValue: false) ? MyHomePage(lat: state.uri.queryParameters['lat'], long: state.uri.queryParameters['long']) : const InitPage(); // received location -> state.uri.queryParameters['lat'], state.uri.queryParameters['long']
-        }
-        return box.get('initial', defaultValue: false) ? const MyHomePage() : const InitPage();
+
+        // if (state.uri.queryParameters['lat'] != null && state.uri.queryParameters['long'] != null) {
+        //   return box.get('initial', defaultValue: false) ? MyHomePage(lat: double.parse(state.uri.queryParameters['lat']!), long: double.parse(state.uri.queryParameters['long']!)) : const InitPage(); // received location -> state.uri.queryParameters['lat'], state.uri.queryParameters['long']
+        // }
+
+        return box.get('initial', defaultValue: false) ? MyHomePage() : const InitPage();
       },
       routes: <RouteBase>[
         // GoRoute(
@@ -148,7 +150,7 @@ final GoRouter _router = GoRouter(
       builder: (BuildContext context, GoRouterState state) {
         // return FirebaseAuth.instance.currentUser != null ? const MyHomePage(title: 'Logat',) : const InitPage();
         Box box = Hive.box("setting");
-        return box.get('initial', defaultValue: false) ? const MyHomePage() : const InitPage();
+        return box.get('initial', defaultValue: false) ? MyHomePage() : const InitPage();
       },
     )
   ],
@@ -204,10 +206,7 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({Key? key, this.lat, this.long}) : super(key: key);
-
-  final String? lat;
-  final String? long;
+  MyHomePage({Key? key,}) : super(key: key);
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -222,11 +221,11 @@ class _MyHomePageState extends State<MyHomePage> {
   late bool _serviceEnabled;
   late PermissionStatus _permissionGranted;
 
-  late double _latitude = 37.42796133580664;
-  late double _longitude = -122.085749655962;
+  late double _latitude = 37.42796133580664; // 지도상의 위치
+  late double _longitude = -122.085749655962; // 지도상의 위치
 
-  late double myLatitude = 37.42796133580664;
-  late double myLongitude = -122.085749655962;
+  late double myLatitude = 37.42796133580664; // 최근 나의 위치
+  late double myLongitude = -122.085749655962; // 최근 나의 위치
 
   List<Map<String, dynamic>> enemies = [];
 
@@ -437,10 +436,87 @@ class _MyHomePageState extends State<MyHomePage> {
     _makeMarkers();
   }
 
+  double? _receivedLat;
+  double? _receivedLong;
+
   late StreamSubscription _intentSub;
   var _sharedFiles = <SharedMediaFile>[];
 
   StreamSubscription? _locationSub;
+
+  void _manageSharedFiles() async {
+    if (_sharedFiles.isNotEmpty) {
+      if (_sharedFiles.length == 1 && _sharedFiles[0].path.startsWith("https://logat-release.web.app")) {
+        Uri uri = Uri.parse(_sharedFiles[0].path);
+        String? lat = uri.queryParameters['lat'];
+        String? long = uri.queryParameters['long'];
+
+        final GoogleMapController controller = await _controller.future;
+
+        if (lat != null && long != null) {
+          try {
+            _receivedLat = double.parse(lat);
+            _receivedLong = double.parse(long);
+
+            _markers.add(
+                Marker(
+                  markerId: MarkerId("Received"),
+                  position: LatLng(_receivedLat!, _receivedLong!),
+                  onTap: () {
+                    showSheetWithLocation(title: "Received Location", location: Loc(lat: _receivedLat!, long: _receivedLong!),);
+                  },
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueMagenta),
+                )
+            );
+
+            setState(() {});
+
+            controller.animateCamera(CameraUpdate.newCameraPosition(
+              CameraPosition(
+                bearing: 0,
+                target: LatLng(_receivedLat!, _receivedLong!),
+                zoom: 13.0,
+              ),
+            ));
+            showSheetWithLocation(title: "Received Location", location: Loc(lat: _receivedLat!, long: _receivedLong!),);
+          } catch (e) {
+            print(e);
+          }
+        }
+
+        return;
+      }
+      if (_sharedFiles.length > 100) {
+        _sharedFiles = _sharedFiles.getRange(0, 100).toList();
+      }
+
+      final now = DateTime.now().toIso8601String();
+      final jsonData = [];
+
+      for (final f in _sharedFiles) {
+        final exif = await Exif.fromPath(f.path);
+        final latlong = await exif.getLatLong();
+
+        jsonData.add({
+          'title': now,
+          'description': '',
+          'date': now,
+          'location': {'lat': latlong?.latitude ?? _latitude, 'long': latlong?.longitude ?? _longitude},
+          'address': '',
+          'path': f.path,
+        });
+      }
+
+      bool? update = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => AddEditPostScreen(logData: jsonData as List<Map<String, Object>>)),
+      );
+
+      if (update ?? false) {
+        _makeMarkers();
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -452,39 +528,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
       print(_sharedFiles.map((f) => f.toMap()));
 
-
-      if (_sharedFiles.isNotEmpty) {
-        if (_sharedFiles.length > 100) {
-          _sharedFiles = _sharedFiles.getRange(0, 100).toList();
-        }
-
-        final now = DateTime.now().toIso8601String();
-        final jsonData = [];
-
-        for (final f in _sharedFiles) {
-          final exif = await Exif.fromPath(f.path);
-          final latlong = await exif.getLatLong();
-
-          jsonData.add({
-            'title': now,
-            'description': '',
-            'date': now,
-            'location': {'lat': latlong?.latitude ?? _latitude, 'long': latlong?.longitude ?? _longitude},
-            'address': '',
-            'path': f.path,
-          });
-        }
-
-
-        bool? update = await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => AddEditPostScreen(logData: jsonData as List<Map<String, Object>>)),
-        );
-
-        if (update ?? false) {
-          _makeMarkers();
-        }
-      }
+      _manageSharedFiles();
     }, onError: (err) {
       print("getIntentDataStream error: $err");
     });
@@ -499,37 +543,7 @@ class _MyHomePageState extends State<MyHomePage> {
       // Tell the library that we are done processing the intent.
       ReceiveSharingIntent.instance.reset();
 
-      if (_sharedFiles.isNotEmpty) {
-        if (_sharedFiles.length > 100) {
-          _sharedFiles = _sharedFiles.getRange(0, 100).toList();
-        }
-
-        final now = DateTime.now().toIso8601String();
-        final jsonData = [];
-
-        for (final f in _sharedFiles) {
-          final exif = await Exif.fromPath(f.path);
-          final latlong = await exif.getLatLong();
-
-          jsonData.add({
-            'title': now,
-            'description': '',
-            'date': now,
-            'location': {'lat': latlong?.latitude ?? _latitude, 'long': latlong?.longitude ?? _longitude},
-            'address': '',
-            'path': f.path,
-          });
-        }
-
-        bool? update = await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => AddEditPostScreen(logData: jsonData as List<Map<String, Object>>)),
-        );
-
-        if (update ?? false) {
-          _makeMarkers();
-        }
-      }
+      _manageSharedFiles();
     });
 
     // _ad = NativeAd(
@@ -717,33 +731,37 @@ class _MyHomePageState extends State<MyHomePage> {
         onMapCreated: (GoogleMapController controller) {
           _controller = Completer<GoogleMapController>();
           _controller.complete(controller);
+          _makeMarkers();
 
-          if (widget.lat != null && widget.long != null) {
+          if (_receivedLat != null && _receivedLong != null) {
             try {
               _markers.add(
                   Marker(
                     markerId: MarkerId("Received"),
-                    position: LatLng(double.parse(widget.lat!), double.parse(widget.long!)),
+                    position: LatLng(_receivedLat!, _receivedLong!),
                     onTap: () {
-                      showSheetWithLocation(title: "Received Location", location: Loc(lat: double.parse(widget.lat!), long: double.parse(widget.long!)),);
+                      showSheetWithLocation(title: "Received Location", location: Loc(lat: _receivedLat!, long: _receivedLong!),);
                     },
+                    icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueMagenta),
                   )
               );
+
+              setState(() {});
+
               controller.animateCamera(CameraUpdate.newCameraPosition(
                 CameraPosition(
                   bearing: 0,
-                  target: LatLng(double.parse(widget.lat!), double.parse(widget.long!)),
+                  target: LatLng(_receivedLat!, _receivedLong!),
                   zoom: 13.0,
                 ),
               ));
-              showSheetWithLocation(title: "Received Location", location: Loc(lat: double.parse(widget.lat!), long: double.parse(widget.long!)),);
+              showSheetWithLocation(title: "Received Location", location: Loc(lat: _receivedLat!, long: _receivedLong!),);
             } catch (e) {
               print(e);
             }
           } else {
             _currentLocation(moveCamera: true);
           }
-          _makeMarkers();
         },
         markers: Set.from(_markers),
         onLongPress: (coord) {
