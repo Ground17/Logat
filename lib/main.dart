@@ -491,16 +491,17 @@ class _MyHomePageState extends State<MyHomePage> {
       }
 
       final now = DateTime.now().toIso8601String();
-      final jsonData = [];
+      final List<Map<String, Object>> jsonData = [];
 
       for (final f in _sharedFiles) {
         final exif = await Exif.fromPath(f.path);
         final latlong = await exif.getLatLong();
+        final date = await exif.getOriginalDate();
 
         jsonData.add({
-          'title': now,
+          'title': date?.toIso8601String() ?? now,
           'description': '',
-          'date': now,
+          'date': date?.toIso8601String() ?? now,
           'location': {'lat': latlong?.latitude ?? _latitude, 'long': latlong?.longitude ?? _longitude},
           'address': '',
           'path': f.path,
@@ -509,7 +510,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
       bool? update = await Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => AddEditPostScreen(logData: jsonData as List<Map<String, Object>>)),
+        MaterialPageRoute(builder: (context) => AddEditPostScreen(logData: jsonData)),
       );
 
       if (update ?? false) {
@@ -924,10 +925,11 @@ class _MyHomePageState extends State<MyHomePage> {
                       for (int i = 0; i < images.length; i++) {
                         final exif = await Exif.fromPath(images[i].path);
                         final latlong = await exif.getLatLong();
+                        final date = await exif.getOriginalDate();
                         jsonData.add({
-                          'title': now,
+                          'title': date?.toIso8601String() ?? now,
                           'description': '',
-                          'date': now,
+                          'date': date?.toIso8601String() ?? now,
                           'location': {'lat': latlong?.latitude ?? _latitude, 'long': latlong?.longitude ?? _longitude},
                           'address': '',
                           'path': images[i].path,
