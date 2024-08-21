@@ -95,7 +95,7 @@ class _SettingScreenState extends State<SettingScreen> {
           ),
           ListTile(
             title: Text("Location Background mode"),
-            subtitle: Text("The location feature is also available in the background of the app, and works when the screen is off. However, this feature is not required, and can be changed in the app settings."),
+            subtitle: Text("The location feature is also available in the background of the app, and works when the screen is off. However, this feature is not required, and can be changed in the app settings. It can affect battery life."),
             trailing: Platform.isAndroid ? Switch(
               value: _isBackground,
               onChanged: (value) async {

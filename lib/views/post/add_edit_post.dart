@@ -109,6 +109,7 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                         icon: const Icon(Icons.auto_awesome),
                         onPressed: () async {
                           await showMessageWithCancel("Create text based on what you've written so far. Do you want to continue? Existing title will be erased.", () async {
+                            _titleControllers[index].text = "(Loading...)";
                             _titleControllers[index].text = (await getText(type: "title", sub: _descriptionControllers[index].text, date: _logData[index].date ?? "", location: Loc(lat: _logData[index].location?.lat ?? 0, long: _logData[index].location?.lat ?? 0), address: _logData[index].address ?? "", path: _logData[index].path ?? "")) ?? "";
                           });
                         },
@@ -133,6 +134,7 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                             icon: const Icon(Icons.auto_awesome),
                             onPressed: () async {
                               await showMessageWithCancel("Create text based on what you've written so far. Do you want to continue? Existing description will be erased.", () async {
+                                _descriptionControllers[index].text = "(Loading...)";
                                 _descriptionControllers[index].text = (await getText(type: "description", sub: _titleControllers[index].text, date: _logData[index].date ?? "", location: Loc(lat: _logData[index].location?.lat ?? 0, long: _logData[index].location?.long ?? 0), address: _logData[index].address ?? "", path: _logData[index].path ?? "")) ?? "";
                               });
                             },
@@ -154,7 +156,8 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                             icon: const Icon(Icons.search),
                             onPressed: () async {
                               await showMessageWithCancel("Create an address using the given latitude and longitude. Do you want to continue? Existing description will be erased.", () async {
-                                List<Map<String, String>> data = await getReverseGeocoding(_logData[index].location?.lat ?? 0, _logData[index].location?.long ?? 0);
+                                _addressControllers[index].text = "(Loading...)";
+                                List<Map<String, String>> data = await getReverseGeocoding(_logData[index].location?.lat ?? 0.0, _logData[index].location?.long ?? 0.0);
                                 _addressControllers[index].text = data.isNotEmpty ? data[0]['text']! : "";
                               });
                             },
@@ -238,16 +241,19 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                         _logData[i].address = _addressControllers[i].text;
 
                         print(_logData[i].path);
+                        if (_logData[i].path != null) {
+                          try {
+                            // 무조건 사진을 어플 디렉토리 내에 저장
+                            String? filename = _logData[i].path!.split('/').lastOrNull;
+                            File _image = File(_logData[i].path!);
 
-                        // Path가 cache 안에 있으면 document directory에 저장
-                        if (_logData[i].path != null && _logData[i].path!.contains("cache")) {
-                          String? filename = _logData[i].path!.split('/').lastOrNull;
-                          File _image = File(_logData[i].path!);
-
-                          if (filename != null) {
-                            final File localImage = await _image.copy('$appDocPath/$filename');
-                            _logData[i].path = '$appDocPath/$filename';
-                            print('$appDocPath/$filename');
+                            if (filename != null) {
+                              final File localImage = await _image.copy('$appDocPath/$filename');
+                              _logData[i].path = '$appDocPath/$filename';
+                              print('$appDocPath/$filename');
+                            }
+                          } catch (e) {
+                            print(e);
                           }
                         }
                       }
@@ -255,9 +261,8 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                       Box<LocData> box = await Hive.openBox<LocData>('log');
                       await box.addAll(_logData);
 
-                      print("1");
                       print(box.values);
-                    }) ?? false;
+                    }, submit: true) ?? false;
 
                     if (context.mounted && shouldPop) {
                       Navigator.pop(context, true);
@@ -291,7 +296,7 @@ class _AddEditPostState extends State<AddEditPostScreen> {
     );
   }
 
-  Future<bool?> showMessageWithCancel(String message, Function f) {
+  Future<bool?> showMessageWithCancel(String message, Function f, {bool submit = false}) {
     return showDialog<bool?>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
@@ -305,8 +310,13 @@ class _AddEditPostState extends State<AddEditPostScreen> {
           ),
           TextButton(
             onPressed: () async {
-              await f();
-              Navigator.pop(context, true);
+              if (submit) { // submit의 경우 hive 업데이트를 먼저 해야 지도에 바로 반영됨.
+                await f();
+                Navigator.pop(context, true);
+              } else {
+                Navigator.pop(context, true);
+                await f();
+              }
             },
             child: const Text('OK'),
           ),
@@ -314,8 +324,6 @@ class _AddEditPostState extends State<AddEditPostScreen> {
       ),
     );
   }
-
-
 
   Future<Map<String, double>?> showMessageWithMap(double lat, double long) {
     double changedLat = lat; double changedLong = long;

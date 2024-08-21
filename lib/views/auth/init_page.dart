@@ -31,79 +31,82 @@ class _InitPageState extends State<InitPage> {
     return Scaffold(
       body: SafeArea(
         minimum: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            SizedBox(height: 10,),
-            const Row(
-              children: [
-                Image(
-                  image: AssetImage('assets/logat_logo.png',),
-                  height: 48.0,
-                ),
-                SizedBox(width: 10,),
-                Text("Logat", style: TextStyle(fontSize: 24),),
-              ],
-            ),
-            SizedBox(height: 10,),
-            const Text("Logat is a service that uses device location information to record and share your daily life as simply as possible.\n"
-                "Location information allows you to write Logat more colorfully, but it is not required. You can freely adjust how to write location information in settings within the application.\n"
-                "The location feature is also available in the background of the app, and works when the screen is off. However, this feature is not required, and can be changed in the app settings."
-                "The default of background is off.\n"
-                "In addition, the app is using the Google Maps API to search for addresses and routes that users want.\n\n"
-                "To start, please read and agree with the following."),
-            CheckboxListTile(
-                value: isPrivacyPolicy,
-                title: GestureDetector(
-                  onTap: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/privacy_policy")));
-                  },
-                  child: const Text('Privacy Policy', style: TextStyle(color: Colors.blue),),
-                ),
-                onChanged: (value) {
-                  setState(() {
-                    isPrivacyPolicy = value;
-                  });
-                }),
-            CheckboxListTile(
-              value: isTermsOfUse,
-              title: GestureDetector(
-                onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/terms_of_use")));
-                },
-                child: const Text('Terms of Use', style: TextStyle(color: Colors.blue),),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            children: [
+              const SizedBox(height: 10,),
+              const Row(
+                children: [
+                  Image(
+                    image: AssetImage('assets/logat_logo.png',),
+                    height: 48.0,
+                  ),
+                  SizedBox(width: 10,),
+                  Text("Logat", style: TextStyle(fontSize: 24),),
+                ],
               ),
-              onChanged: (value) {
-                setState(() {
-                  isTermsOfUse = value;
-                });
-              }
-            ),
-            Container(
-              padding: const EdgeInsets.all(8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ButtonStyle(
-                          backgroundColor: (isPrivacyPolicy ?? false) && (isTermsOfUse ?? false) ? WidgetStateProperty.all<Color>(Theme.of(context).primaryColor) : WidgetStateProperty.all<Color>(Colors.grey),
-                        ),
-                        onPressed: () async {
-                          if ((isPrivacyPolicy ?? false) && (isTermsOfUse ?? false)) {
-                            Box box = await Hive.openBox("setting");
-                            await box.put('initial', true);
+              SizedBox(height: 10,),
+              const Text("Logat is a service that uses device location information to record and share your daily life as simply as possible.\n"
+                  "Location information allows you to write Logat more colorfully, but it is not required. You can freely adjust how to write location information in settings within the application.\n"
+                  "The location feature is also available in the background of the app, and works when the screen is off. However, this feature is not required, and can be changed in the app setting or device setting."
+                  "The default of background is off.\n"
+                  "In addition, the app is using the Google Maps API to search for addresses and routes that users want.\n\n"
+                  "To start, please read and agree with the following."),
+              CheckboxListTile(
+                  value: isPrivacyPolicy,
+                  title: GestureDetector(
+                    onTap: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/privacy_policy")));
+                    },
+                    child: const Text('Privacy Policy', style: TextStyle(color: Colors.blue),),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      isPrivacyPolicy = value;
+                    });
+                  }),
+              CheckboxListTile(
+                  value: isTermsOfUse,
+                  title: GestureDetector(
+                    onTap: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => const WebViewApp(url: "https://logat-release.web.app/terms_of_use")));
+                    },
+                    child: const Text('Terms of Use', style: TextStyle(color: Colors.blue),),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      isTermsOfUse = value;
+                    });
+                  }
+              ),
+              Container(
+                  padding: const EdgeInsets.all(8),
+                  child: Row(
+                      children: [
+                        Expanded(
+                            child: ElevatedButton(
+                              style: ButtonStyle(
+                                backgroundColor: (isPrivacyPolicy ?? false) && (isTermsOfUse ?? false) ? WidgetStateProperty.all<Color>(Theme.of(context).primaryColor) : WidgetStateProperty.all<Color>(Colors.grey),
+                              ),
+                              onPressed: () async {
+                                if ((isPrivacyPolicy ?? false) && (isTermsOfUse ?? false)) {
+                                  Box box = await Hive.openBox("setting");
+                                  await box.put('initial', true);
 
-                            // Navigator.of(this.context).pushReplacement(MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat')),);
-                            context.go('/initial');
-                          }
-                        },
-                        child: const Text('I got it!',
-                            style: TextStyle(fontSize: 20.0, color: Colors.white)),
-                      )
-                    )
-                  ]
-                )
-            )
-          ],
+                                  // Navigator.of(this.context).pushReplacement(MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat')),);
+                                  context.go('/initial');
+                                }
+                              },
+                              child: const Text('I got it!',
+                                  style: TextStyle(fontSize: 20.0, color: Colors.white)),
+                            )
+                        )
+                      ]
+                  )
+              )
+            ],
+          ), // 반동 효과
         ),
       ),
     );

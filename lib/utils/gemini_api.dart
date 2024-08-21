@@ -9,6 +9,7 @@ import 'package:logat/utils/structure.dart';
 import 'package:native_exif/native_exif.dart';
 
 import '../key.dart';
+import 'maps_api.dart';
 
 final coordModel = GenerativeModel(
   model: 'gemini-1.5-flash',
@@ -63,12 +64,17 @@ final textModel = GenerativeModel(
 
 Future<String?> getText({String type = "title", String sub="", required String date, required Loc location, String address="", String path=""}) async {
   final List<Part> parts = [];
+  parts.add(TextPart("date: $date"));
+
   if (sub != "") {
     parts.add(TextPart("${type == "title" ? "description" : "title"}: $sub"));
   }
 
-  parts.add(TextPart("date: $date"));
-  parts.add(TextPart("address: (latitude: ${location.lat}, longitude: ${location.long}) $address"));
+  if (address == "") {
+    List<Map<String, String>> data = await getReverseGeocoding(location.lat ?? 0.0, location.long ?? 0.0);
+    address = data.isNotEmpty ? data[0]['text']! : "";
+    parts.add(TextPart("$address(latitude: ${location.lat ?? 0.0}, longitude: ${location.long ?? 0.0})"));
+  }
 
   if (path != "") {
     try {
@@ -88,3 +94,8 @@ Future<String?> getText({String type = "title", String sub="", required String d
 
   return response.text?.substring(0, min(response.text?.length ?? 0, 100)) ?? "";
 }
+
+final model = GenerativeModel(
+  model: 'gemini-1.5-flash',
+  apiKey: GEMINI_KEYS,
+);

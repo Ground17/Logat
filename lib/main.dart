@@ -201,6 +201,7 @@ class MyApp extends StatelessWidget {
         colorSchemeSeed: Colors.blue[800],
       ),
       themeMode: ThemeMode.system,
+      debugShowCheckedModeBanner: false, // just use for screenshot to submit
     );
   }
 }
@@ -627,7 +628,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
     _markers.clear();
     for (final value in values) {
-      print(value);
+      // print(value);
       _markers.add(
         Marker(
           markerId: MarkerId(value.key.toString()),
@@ -1039,8 +1040,8 @@ class _MyHomePageState extends State<MyHomePage> {
                         }
 
                         if (index != -1) {
-                          final data = await getReverseGeocoding(values[index].location?.lat ?? 0, values[index].location?.long ?? 0);
-                          markers_input.add("${data.isNotEmpty ? '${data[0]['text']} ' : ''}(latitude: ${values[index].location?.lat ?? 0}, longitude: ${values[index].location?.long ?? 0})");
+                          final data = await getReverseGeocoding(values[index].location?.lat ?? 0.0, values[index].location?.long ?? 0.0);
+                          markers_input.add("${data.isNotEmpty ? '${data[0]['text']} ' : ''}(latitude: ${values[index].location?.lat ?? 0.0}, longitude: ${values[index].location?.long ?? 0.0})");
                           values.removeAt(index);
                         }
                       }
@@ -1174,6 +1175,28 @@ class _MyHomePageState extends State<MyHomePage> {
                               box.delete(key);
                             }
                             _makeMarkers();
+                          });
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.auto_awesome),
+                        onPressed: () {
+                          showMessageWithCancel("We'll send this log to Gemini and Gemini will give you a good feedback. Do you want it?", () async {
+                            try {
+                              final List<Part> parts = [];
+                              if (path != "") {
+                                parts.add(DataPart('image/jpeg', File(path).readAsBytesSync()));
+                              }
+
+                              parts.add(TextPart("Express your feelings about this post as positively as possible"));
+                              final response = await model.generateContent([
+                                Content.multi(parts as Iterable<Part>)
+                              ]);
+                              showMessage(response.text ?? "Sorry. We can't get a message from Gemini due to inner error.");
+                            } catch (e) {
+                              print(e);
+                              showMessage("Sorry. We can't get a message from Gemini due to inner error.");
+                            }
                           });
                         },
                       ),
