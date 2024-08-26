@@ -29,13 +29,13 @@ class _SettingScreenState extends State<SettingScreen> {
   // bool isIOSLogin = false;
 
   late bool _isChecked = false;
-  late bool _isBackground = false;
+  // late bool _isBackground = false;
 
 
   void initStateAsync() async {
     Box box = await Hive.openBox("setting");
 
-    _isBackground = await Location().isBackgroundModeEnabled();
+    // _isBackground = await Location().isBackgroundModeEnabled();
     setState(() {
       _isChecked = box.get('location_autosave', defaultValue: false);
     });
@@ -67,54 +67,54 @@ class _SettingScreenState extends State<SettingScreen> {
         padding: const EdgeInsets.fromLTRB(0, 10, 0, 0),
         shrinkWrap: true,
         children: [
-          ListTile(
-            title: Text("Auto-save logs"),
-            subtitle: Text("Save the current location locally every 10 minutes."),
-            trailing: Platform.isAndroid ? Switch(
-              value: _isChecked,
-              onChanged: (value) async {
-                Box box = await Hive.openBox("setting");
-                await box.put('location_autosave', value ?? false);
-                widget.autosave(value ?? false);
-                setState(() {
-                  _isChecked = value;
-                });
-              },
-            ) : CupertinoSwitch(
-              value: _isChecked,
-              activeColor: CupertinoColors.activeBlue,
-              onChanged: (bool? value) async {
-                Box box = await Hive.openBox("setting");
-                await box.put('location_autosave', value ?? false);
-                widget.autosave(value ?? false);
-                setState(() {
-                  _isChecked = value ?? false;
-                });
-              },
-            ),
-          ),
-          ListTile(
-            title: Text("Location Background mode"),
-            subtitle: Text("The location feature is also available in the background of the app, and works when the screen is off. However, this feature is not required, and can be changed in the app settings. It can affect battery life."),
-            trailing: Platform.isAndroid ? Switch(
-              value: _isBackground,
-              onChanged: (value) async {
-                bool result = await Location().enableBackgroundMode(enable: value);
-                setState(() {
-                  _isBackground = value;
-                });
-              },
-            ) : CupertinoSwitch(
-              value: _isBackground,
-              activeColor: CupertinoColors.activeBlue,
-              onChanged: (bool? value) async {
-                bool result = await Location().enableBackgroundMode(enable: value);
-                setState(() {
-                  _isBackground = value ?? false;
-                });
-              },
-            ),
-          ),
+          // ListTile(
+          //   title: Text("Auto-save logs"),
+          //   subtitle: Text("Save the current location locally every 10 minutes."),
+          //   trailing: Platform.isAndroid ? Switch(
+          //     value: _isChecked,
+          //     onChanged: (value) async {
+          //       Box box = await Hive.openBox("setting");
+          //       await box.put('location_autosave', value ?? false);
+          //       widget.autosave(value ?? false);
+          //       setState(() {
+          //         _isChecked = value;
+          //       });
+          //     },
+          //   ) : CupertinoSwitch(
+          //     value: _isChecked,
+          //     activeColor: CupertinoColors.activeBlue,
+          //     onChanged: (bool? value) async {
+          //       Box box = await Hive.openBox("setting");
+          //       await box.put('location_autosave', value ?? false);
+          //       widget.autosave(value ?? false);
+          //       setState(() {
+          //         _isChecked = value ?? false;
+          //       });
+          //     },
+          //   ),
+          // ),
+          // ListTile(
+          //   title: Text("Location Background mode"),
+          //   subtitle: Text("The location feature is also available in the background of the app, and works when the screen is off. However, this feature is not required, and can be changed in the app settings. It can affect battery life."),
+          //   trailing: Platform.isAndroid ? Switch(
+          //     value: _isBackground,
+          //     onChanged: (value) async {
+          //       bool result = await Location().enableBackgroundMode(enable: value);
+          //       setState(() {
+          //         _isBackground = value;
+          //       });
+          //     },
+          //   ) : CupertinoSwitch(
+          //     value: _isBackground,
+          //     activeColor: CupertinoColors.activeBlue,
+          //     onChanged: (bool? value) async {
+          //       bool result = await Location().enableBackgroundMode(enable: value);
+          //       setState(() {
+          //         _isBackground = value ?? false;
+          //       });
+          //     },
+          //   ),
+          // ),
           ListTile(
             title: Text("Device Location Settings"),
             onTap: () => AppSettings.openAppSettings(type: AppSettingsType.location),
