@@ -65,7 +65,8 @@ class MyApp extends StatelessWidget {
         colorSchemeSeed: Colors.blue[800],
       ),
       themeMode: ThemeMode.system,
-      home: isNotInit ? const MyHomePage() : const InitPage() ,
+      home: isNotInit ? const MyHomePage() : const InitPage(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }

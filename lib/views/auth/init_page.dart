@@ -79,13 +79,13 @@ class _InitPageState extends State<InitPage> {
                   }
               ),
               Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(16),
                   child: Row(
                       children: [
                         Expanded(
                             child: ElevatedButton(
                               style: ButtonStyle(
-                                backgroundColor: (isPrivacyPolicy ?? false) && (isTermsOfUse ?? false) ? WidgetStateProperty.all<Color>(Theme.of(context).primaryColor) : WidgetStateProperty.all<Color>(Colors.grey),
+                                backgroundColor: (isPrivacyPolicy ?? false) && (isTermsOfUse ?? false) ? WidgetStateProperty.all<Color>(Colors.blue[800]!) : WidgetStateProperty.all<Color>(Colors.grey),
                               ),
                               onPressed: () async {
                                 if ((isPrivacyPolicy ?? false) && (isTermsOfUse ?? false)) {

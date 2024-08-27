@@ -484,9 +484,8 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(150), // AppBar 높이 조절
+        preferredSize: const Size.fromHeight(200), // AppBar 높이 조절
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
             AppBar(
               backgroundColor: Colors.transparent,
@@ -535,7 +534,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       color: Colors.white,
                     ),
                     child: ListTile(
-                      title: Text(_suggestions[index]['text']!),
+                      title: Text(_suggestions[index]['text']!, style: const TextStyle(color: Colors.black45),),
                       onTap: () async {
                         Map<String, double>? data = await getGeocodingFromPlaceId(_suggestions[index]['placeId']!);
                         print(data);

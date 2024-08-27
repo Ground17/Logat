@@ -222,13 +222,13 @@ class _AddEditPostState extends State<AddEditPostScreen> {
           }
         ),
         bottomNavigationBar: Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
               Expanded(
                 child: ElevatedButton(
                   style: ButtonStyle(
-                    backgroundColor: WidgetStateProperty.all<Color>(Theme.of(context).primaryColor),
+                    backgroundColor: WidgetStateProperty.all<Color>(Colors.blue[800]!),
                   ),
                   onPressed: () async {
                     final bool shouldPop = await showMessageWithCancel("Do you want to save on local device?", () async {
