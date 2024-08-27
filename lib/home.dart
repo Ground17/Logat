@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/adapters.dart';
 import 'package:location/location.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:logat/utils/chat.dart';
 import 'package:logat/utils/gemini_api.dart';
 import 'package:logat/utils/maps_api.dart';
 import 'package:logat/utils/structure.dart';
@@ -21,9 +22,10 @@ import 'package:native_exif/native_exif.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:share_plus/share_plus.dart';
 
+final appLinks = AppLinks(); // AppLinks is singleton
 
 class MyHomePage extends StatefulWidget {
-  MyHomePage({Key? key,}) : super(key: key);
+  const MyHomePage({Key? key,}) : super(key: key);
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -38,6 +40,7 @@ class _MyHomePageState extends State<MyHomePage> {
   late bool _serviceEnabled;
   late PermissionStatus _permissionGranted;
 
+  DateTime _lastLocationUpdated = DateTime.now();
   late double _latitude = 37.42796133580664; // 지도상의 위치
   late double _longitude = -122.085749655962; // 지도상의 위치
 
@@ -121,11 +124,66 @@ class _MyHomePageState extends State<MyHomePage> {
     return false;
   }
 
+  StreamSubscription? uriSub;
+
   late DateTime _startTime;
 
   int _catchCount = 0;
 
   int radar = 1000; // m 단위, radar가 10초에 10m씩 늘어나게 설계
+
+  void setEnemyDirection() async {
+    if (await checkLocationAvailable()) {
+      final me = await location.getLocation();
+
+      // getGeocoding();
+
+      for (int i = 0; i < enemies.length; i++) {
+        final chat = coordModel.startChat();
+        final prompt = 'You are a finder of someone. Find the coordinates of where you need to go by using the given coordinate information below. Think step by step.'
+            'previous location of someone: (latitude: $myLatitude, long: $myLongitude)'
+            'current location of someone: (latitude: ${me.latitude}, long: ${me.longitude})'
+            'current location of you: (latitude: ${enemies[i]['coord']!['lat']}, long: ${enemies[i]['coord']!['long']})'
+            'transportation: ${enemies[i]['mode']}';
+
+        var response = await chat.sendMessage(Content.text(prompt));
+
+        final functionCalls = response.functionCalls.toList();
+        if (functionCalls.isNotEmpty) {
+          final functionCall = functionCalls.first;
+          try {
+            switch (functionCall.name) {
+              case 'getCoord':
+                print("${enemies[i]['coord']!['lat']}, ${enemies[i]['coord']!['long']}, ${functionCall.args['latitude']}, ${functionCall.args['longitude']}");
+                if (functionCall.args['latitude'] != null && functionCall.args['longitude'] != null ) {
+                  enemies[i]['route'] = await getDirection(enemies[i]['coord']!['lat'], enemies[i]['coord']!['long'], functionCall.args['latitude'] as double, functionCall.args['longitude'] as double, mode: enemies[i]['mode'] as String);
+                } else {
+                  enemies[i]['route'] = await getDirection(enemies[i]['coord']!['lat'], enemies[i]['coord']!['long'], me.latitude ?? 0, me.longitude ?? 0, mode: enemies[i]['mode'] as String);
+                }
+                // print("route");
+                // print(enemies[i]['route']);
+                break;
+              default:
+                break;
+            }
+          } catch (e) {
+            print(e);
+            enemies[i]['route'] = [];
+          }
+        }
+      }
+
+      if (me.latitude != null) {
+        myLatitude = me.latitude!;
+      }
+
+      if (me.longitude != null) {
+        myLongitude = me.longitude!;
+      }
+    } else {
+      _endGame();
+    }
+  }
 
   void _startTimer() {
     int update_second = 1; // 얼마나 업데이트되는지 설정
@@ -188,56 +246,7 @@ class _MyHomePageState extends State<MyHomePage> {
       // current location of someone: ()
       // previous location of someone: ()
       // now where you are: ()
-      if (await checkLocationAvailable()) {
-        final me = await location.getLocation();
-
-        // getGeocoding();
-
-        for (int i = 0; i < enemies.length; i++) {
-          final chat = coordModel.startChat();
-          final prompt = 'You are a finder of someone. Find the coordinates of where you need to go by using the given coordinate information below. Think step by step.'
-              'previous location of someone: (latitude: $myLatitude, long: $myLongitude)'
-              'current location of someone: (latitude: ${me.latitude}, long: ${me.longitude})'
-              'current location of you: (latitude: ${enemies[i]['coord']!['lat']}, long: ${enemies[i]['coord']!['long']})'
-              'transportation: ${enemies[i]['mode']}';
-
-          var response = await chat.sendMessage(Content.text(prompt));
-
-          final functionCalls = response.functionCalls.toList();
-          if (functionCalls.isNotEmpty) {
-            final functionCall = functionCalls.first;
-            try {
-              switch (functionCall.name) {
-                case 'getCoord':
-                  print("${enemies[i]['coord']!['lat']}, ${enemies[i]['coord']!['long']}, ${functionCall.args['latitude']}, ${functionCall.args['longitude']}");
-                  if (functionCall.args['latitude'] != null && functionCall.args['longitude'] != null ) {
-                    enemies[i]['route'] = await getDirection(enemies[i]['coord']!['lat'], enemies[i]['coord']!['long'], functionCall.args['latitude'] as double, functionCall.args['longitude'] as double, mode: enemies[i]['mode'] as String);
-                  } else {
-                    enemies[i]['route'] = await getDirection(enemies[i]['coord']!['lat'], enemies[i]['coord']!['long'], me.latitude ?? 0, me.longitude ?? 0, mode: enemies[i]['mode'] as String);
-                  }
-                  // print("route");
-                  // print(enemies[i]['route']);
-                  break;
-                default:
-                  break;
-              }
-            } catch (e) {
-              print(e);
-              enemies[i]['route'] = [];
-            }
-          }
-        }
-
-        if (me.latitude != null) {
-          myLatitude = me.latitude!;
-        }
-
-        if (me.longitude != null) {
-          myLongitude = me.longitude!;
-        }
-      } else {
-        _endGame();
-      }
+      setEnemyDirection();
     });
   }
 
@@ -253,8 +262,8 @@ class _MyHomePageState extends State<MyHomePage> {
     _makeMarkers();
   }
 
-  double? _receivedLat;
-  double? _receivedLong;
+  // double? _receivedLat;
+  // double? _receivedLong;
 
   late StreamSubscription _intentSub;
   var _sharedFiles = <SharedMediaFile>[];
@@ -263,46 +272,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _manageSharedFiles() async {
     if (_sharedFiles.isNotEmpty) {
-      if (_sharedFiles.length == 1 && _sharedFiles[0].path.startsWith("https://logat-release.web.app")) {
-        Uri uri = Uri.parse(_sharedFiles[0].path);
-        String? lat = uri.queryParameters['lat'];
-        String? long = uri.queryParameters['long'];
-
-        final GoogleMapController controller = await _controller.future;
-
-        if (lat != null && long != null) {
-          try {
-            _receivedLat = double.parse(lat);
-            _receivedLong = double.parse(long);
-
-            _markers.add(
-                Marker(
-                  markerId: MarkerId("Received"),
-                  position: LatLng(_receivedLat!, _receivedLong!),
-                  onTap: () {
-                    showSheetWithLocation(title: "Received Location", location: Loc(lat: _receivedLat!, long: _receivedLong!),);
-                  },
-                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueMagenta),
-                )
-            );
-
-            setState(() {});
-
-            controller.animateCamera(CameraUpdate.newCameraPosition(
-              CameraPosition(
-                bearing: 0,
-                target: LatLng(_receivedLat!, _receivedLong!),
-                zoom: 13.0,
-              ),
-            ));
-            showSheetWithLocation(title: "Received Location", location: Loc(lat: _receivedLat!, long: _receivedLong!),);
-          } catch (e) {
-            print(e);
-          }
-        }
-
-        return;
-      }
       if (_sharedFiles.length > 100) {
         _sharedFiles = _sharedFiles.getRange(0, 100).toList();
       }
@@ -362,6 +331,40 @@ class _MyHomePageState extends State<MyHomePage> {
       ReceiveSharingIntent.instance.reset();
 
       _manageSharedFiles();
+    });
+
+    uriSub = appLinks.uriLinkStream.listen((uri) async {
+      String? lat = uri.queryParameters['lat'];
+      String? long = uri.queryParameters['long'];
+
+      if (lat != null && long != null) {
+        try {
+          _markers.add(
+              Marker(
+                markerId: MarkerId("Received"),
+                position: LatLng(double.parse(lat), double.parse(long)),
+                onTap: () {
+                  showSheetWithLocation(title: "Received Location", location: Loc(lat: double.parse(lat), long: double.parse(long)),);
+                },
+                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueMagenta),
+              )
+          );
+
+          setState(() {});
+
+          final GoogleMapController controller = await _controller.future;
+          controller.animateCamera(CameraUpdate.newCameraPosition(
+            CameraPosition(
+              bearing: 0,
+              target: LatLng(double.parse(lat), double.parse(long)),
+              zoom: 13.0,
+            ),
+          ));
+          showSheetWithLocation(title: "Received Location", location: Loc(lat: double.parse(lat), long: double.parse(long)),);
+        } catch (e) {
+          print(e);
+        }
+      }
     });
 
     // _ad = NativeAd(
@@ -428,6 +431,7 @@ class _MyHomePageState extends State<MyHomePage> {
     _searchController.dispose();
     _calTimer?.cancel(); // Timer 해제
     _apiTimer?.cancel(); // Timer 해제
+    uriSub?.cancel();
     // _ad?.dispose();
 
     super.dispose();
@@ -443,28 +447,30 @@ class _MyHomePageState extends State<MyHomePage> {
     final values = box.values;
 
     _markers.clear();
-    for (final value in values) {
-      // print(value);
-      _markers.add(
-          Marker(
-            markerId: MarkerId(value.key.toString()),
-            onTap: () {
-              showSheetWithLocation(title: value.title ?? "", description: value.description ?? "", address: value.address ?? "", location: value.location ?? Loc(lat: 0, long: 0), date: value.date ?? "", path: value.path, key: value.key);
-            },
-            onDragEnd: null,
-            position: LatLng(value.location?.lat ?? _latitude, value.location?.long ?? _longitude),
-          )
-      );
-    }
-
-    for (final enemy in enemies) {
-      _markers.add(
-          Marker(
-            markerId: MarkerId("enemy #${enemy.hashCode}"),
-            position: LatLng(enemy['coord']['lat'], enemy['coord']['long']),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          )
-      );
+    if (enemies.isEmpty) {
+      for (final value in values) {
+        // print(value);
+        _markers.add(
+            Marker(
+              markerId: MarkerId(value.key.toString()),
+              onTap: () {
+                showSheetWithLocation(title: value.title ?? "", description: value.description ?? "", address: value.address ?? "", location: value.location ?? Loc(lat: 0, long: 0), date: value.date ?? "", path: value.path, key: value.key);
+              },
+              onDragEnd: null,
+              position: LatLng(value.location?.lat ?? _latitude, value.location?.long ?? _longitude),
+            )
+        );
+      }
+    } else {
+      for (final enemy in enemies) {
+        _markers.add(
+            Marker(
+              markerId: MarkerId("enemy #${enemy.hashCode}"),
+              position: LatLng(enemy['coord']['lat'], enemy['coord']['long']),
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+            )
+        );
+      }
     }
 
     setState(() {});
@@ -480,6 +486,7 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(150), // AppBar 높이 조절
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             AppBar(
               backgroundColor: Colors.transparent,
@@ -546,40 +553,19 @@ class _MyHomePageState extends State<MyHomePage> {
       body: GoogleMap(
         mapType: MapType.normal,
         initialCameraPosition: _kGooglePlex,
-        onMapCreated: (GoogleMapController controller) {
+        onMapCreated: (GoogleMapController controller) async {
+          Box box = await Hive.openBox("setting");
+
+          _latitude = box.get('myLatitude', defaultValue: _latitude);
+          _longitude = box.get('myLongitude', defaultValue: _longitude);
+
+          _goToThePosition(_latitude, _longitude);
+
           _controller = Completer<GoogleMapController>();
           _controller.complete(controller);
           _makeMarkers();
 
-          if (_receivedLat != null && _receivedLong != null) {
-            try {
-              _markers.add(
-                  Marker(
-                    markerId: MarkerId("Received"),
-                    position: LatLng(_receivedLat!, _receivedLong!),
-                    onTap: () {
-                      showSheetWithLocation(title: "Received Location", location: Loc(lat: _receivedLat!, long: _receivedLong!),);
-                    },
-                    icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueMagenta),
-                  )
-              );
-
-              setState(() {});
-
-              controller.animateCamera(CameraUpdate.newCameraPosition(
-                CameraPosition(
-                  bearing: 0,
-                  target: LatLng(_receivedLat!, _receivedLong!),
-                  zoom: 13.0,
-                ),
-              ));
-              showSheetWithLocation(title: "Received Location", location: Loc(lat: _receivedLat!, long: _receivedLong!),);
-            } catch (e) {
-              print(e);
-            }
-          } else {
-            _currentLocation(moveCamera: true);
-          }
+          _currentLocation(moveCamera: true);
         },
         markers: Set.from(_markers),
         onLongPress: (coord) {
@@ -606,9 +592,24 @@ class _MyHomePageState extends State<MyHomePage> {
             }
           });
         },
-        onCameraMove: (cameraPosition) {
+        onCameraMove: (cameraPosition) async {
           _latitude = cameraPosition.target.latitude;
           _longitude = cameraPosition.target.longitude;
+
+          DateTime now = DateTime.now();
+
+          if (now.difference(_lastLocationUpdated).inSeconds > 5) {
+            try {
+              Box box = await Hive.openBox("setting");
+
+              box.put('myLatitude', _latitude);
+              box.put('myLongitude', _longitude);
+            } catch (e) {
+              print(e);
+            }
+
+            _lastLocationUpdated = DateTime.now();
+          }
         },
         myLocationEnabled: true,
         myLocationButtonEnabled: false,
@@ -618,7 +619,7 @@ class _MyHomePageState extends State<MyHomePage> {
         direction: Axis.vertical,
         children: <Widget>[
           Container(
-              margin: const EdgeInsets.all(10),
+              margin: const EdgeInsets.all(5),
               child: FloatingActionButton.small(
                 heroTag: "share",
                 onPressed: () {
@@ -629,7 +630,7 @@ class _MyHomePageState extends State<MyHomePage> {
               )
           ),
           Container(
-              margin: const EdgeInsets.all(10),
+              margin: const EdgeInsets.all(5),
               child: FloatingActionButton.small(
                 heroTag: "near_me",
                 onPressed: () {
@@ -639,7 +640,17 @@ class _MyHomePageState extends State<MyHomePage> {
               )
           ),
           Container(
-              margin: const EdgeInsets.all(10),
+              margin: const EdgeInsets.all(5),
+              child: FloatingActionButton.small(
+                heroTag: "ai",
+                onPressed: () {
+                  showSheetGemini();
+                },
+                child: const Icon(Icons.auto_awesome),
+              )
+          ),
+          Container(
+              margin: const EdgeInsets.all(5),
               child: FloatingActionButton.small(
                 heroTag: "add",
                 onPressed: () {
@@ -649,7 +660,7 @@ class _MyHomePageState extends State<MyHomePage> {
               )
           ),
           Container(
-              margin: const EdgeInsets.all(10),
+              margin: const EdgeInsets.all(5),
               child: FloatingActionButton.small(
                 heroTag: "setting",
                 onPressed: () {
@@ -734,7 +745,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       Navigator.pop(_context);
 
                       final ImagePicker picker = ImagePicker();
-                      final List<XFile> images = await picker.pickMultiImage();
+                      final List<XFile> images = await picker.pickMultiImage(maxHeight: 1024, maxWidth: 1024,);
 
                       final now = DateTime.now().toIso8601String();
                       final List<Map<String, Object>> jsonData = [];
@@ -770,7 +781,7 @@ class _MyHomePageState extends State<MyHomePage> {
                     onPressed: () async {
                       Navigator.pop(_context);
                       final ImagePicker picker = ImagePicker();
-                      final XFile? photo = await picker.pickImage(source: ImageSource.camera);
+                      final XFile? photo = await picker.pickImage(source: ImageSource.camera, maxWidth: 1024, maxHeight: 1024,);
 
                       final now = DateTime.now().toIso8601String();
                       final jsonData = [{
@@ -817,6 +828,55 @@ class _MyHomePageState extends State<MyHomePage> {
                     }
                   },
                 ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<String>> _getMarkersInputToAI() async {
+    List<String> markersInput = [];
+
+    Box<LocData> box = await Hive.openBox<LocData>('log');
+    List<LocData> values = box.values.toList();
+
+    for (int i = 0; i < 10; i++) {
+      if (i >= values.length) {
+        break;
+      }
+
+      String temp = "";
+      int index = -1;
+      for (int j = 0; j < values.length; j++) {
+        if ((values[j].date?.compareTo(temp) ?? 0) > 0) {
+          temp = values[j].date ?? "";
+          index = j;
+        }
+      }
+
+      if (index != -1) {
+        final data = await getReverseGeocoding(values[index].location?.lat ?? 0.0, values[index].location?.long ?? 0.0);
+        markersInput.add("${data.isNotEmpty ? '${data[0]['text']} ' : ''}(when: ${values[index].date}, latitude: ${values[index].location?.lat ?? 0.0}, longitude: ${values[index].location?.long ?? 0.0})");
+        values.removeAt(index);
+      }
+    }
+
+    return markersInput;
+  }
+
+  void showSheetGemini() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext _context) {
+        return SizedBox(
+          height: 250,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
                 ElevatedButton(
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
@@ -827,44 +887,26 @@ class _MyHomePageState extends State<MyHomePage> {
                     ],
                   ),
                   onPressed: () async {
-                    _context.pop();
+                    Navigator.of(_context).pop();
 
-                    showMessageWithCancel("We recommend the following places by providing the existing visit records to Google Gemini and Google Maps. Do you want to continue?", () async {
+                    showMessageWithCancel("We recommend the place by providing the existing visit logs to Google Gemini and Google Maps. Do you want to continue?", () async {
                       final chat = addressModel.startChat();
-                      final markers_input = [];
 
-                      Box<LocData> box = await Hive.openBox<LocData>('log');
-                      List<LocData> values = box.values.toList();
+                      List<String> markersInput = await _getMarkersInputToAI();
 
-                      if (values.isEmpty) {
+                      if (markersInput.isEmpty) {
                         showMessage("No data is available.");
                         return;
                       }
 
-                      for (int i = 0; i < 3; i++) {
-                        if (i >= values.length) {
-                          break;
-                        }
-
-                        String temp = "";
-                        int index = -1;
-                        for (int j = 0; j < values.length; j++) {
-                          if ((values[j].date?.compareTo(temp) ?? 0) > 0) {
-                            temp = values[j].date ?? "";
-                            index = j;
-                          }
-                        }
-
-                        if (index != -1) {
-                          final data = await getReverseGeocoding(values[index].location?.lat ?? 0.0, values[index].location?.long ?? 0.0);
-                          markers_input.add("${data.isNotEmpty ? '${data[0]['text']} ' : ''}(latitude: ${values[index].location?.lat ?? 0.0}, longitude: ${values[index].location?.long ?? 0.0})");
-                          values.removeAt(index);
-                        }
-                      }
-
-                      final prompt = 'You are a traveler. Find the address of where you need to go next by using the given information below. Think step by step.'
-                          'previous location you visited: $markers_input'
-                          'current location of you: (latitude: $_latitude, long: $_longitude)';
+                      String now = DateTime.now().toIso8601String();
+                      final data = await getReverseGeocoding(_latitude, _longitude);
+                      final currentAddress = data.isNotEmpty ? '${data[0]['text']} ' : '';
+                      final prompt = 'Find the address of where we need to go next by using the given information below. '
+                          'Please recommend a place to visit nearby or recommend a place related to the anniversary using the date. '
+                          'Think step by step and explain reason in as much detail as possible.'
+                          '\n\nprevious location I visited: $markersInput\n';
+                          // 'current location of me: $currentAddress(when: $now, latitude: $_latitude, long: $_longitude)';
 
                       var response = await chat.sendMessage(Content.text(prompt));
 
@@ -877,13 +919,16 @@ class _MyHomePageState extends State<MyHomePage> {
                               if (functionCall.args['address'] != null) {
                                 final data = await getGeocoding(functionCall.args['address'].toString());
                                 if (data.isNotEmpty) {
+                                  _goToThePosition(data[0]['lat'] as double, data[0]['long'] as double);
+                                  showSheetWithLocation(title: "Recommended Location", location: Loc(lat: data[0]['lat'] as double, long: data[0]['long'] as double), description: functionCall.args['reason'].toString());
+
                                   setState(() {
                                     _markers.add(
                                         Marker(
                                           markerId: MarkerId("Recommended"),
                                           position: LatLng(data[0]['lat'] as double, data[0]['long'] as double),
                                           onTap: () {
-                                            showSheetWithLocation(title: "Recommended Location", location: Loc(lat: data[0]['lat'] as double, long: data[0]['long'] as double),);
+                                            showSheetWithLocation(title: "Recommended Location", location: Loc(lat: data[0]['lat'] as double, long: data[0]['long'] as double), description: functionCall.args['reason'].toString());
                                           },
                                           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
                                         )
@@ -928,8 +973,44 @@ class _MyHomePageState extends State<MyHomePage> {
                         });
 
                         _startTime = DateTime.now();
+                        setEnemyDirection(); // timer가 수행해야 할 함수 호출: timer 내 코드가 맨 처음에는 수행되지 않음
                         _startTimer();
                       }
+                    } else {
+                      showMessage("I can't find the current location, please check the location settings.");
+                    }
+                  },
+                ),
+                ElevatedButton(
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome),
+                      SizedBox(width: 10,),
+                      Text('Ask to AI with current map location and logs'),
+                    ],
+                  ),
+                  onPressed: () async {
+                    if (await checkLocationAvailable()) {
+                      Navigator.pop(_context);
+
+                      List<String> markersInput = await _getMarkersInputToAI();
+
+                      if (markersInput.isEmpty) {
+                        showMessage("No data is available.");
+                        return;
+                      }
+
+                      String now = DateTime.now().toIso8601String();
+                      final data = await getReverseGeocoding(_latitude, _longitude);
+                      final currentAddress = data.isNotEmpty ? '${data[0]['text']} ' : '';
+                      final prompt = '\n\nprevious location I visited: $markersInput\n'
+                          'current location of me: $currentAddress(when: $now, latitude: $_latitude, long: $_longitude)';
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => ChatScreen(initialString: prompt,)),
+                      );
                     } else {
                       showMessage("I can't find the current location, please check the location settings.");
                     }
@@ -970,7 +1051,23 @@ class _MyHomePageState extends State<MyHomePage> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 ListTile(
-                  leading: Visibility(visible: (path ?? "") != "", child: Image.file(File(path!), width: 50, height: 50),),
+                  leading: Visibility(
+                    visible: (path ?? "") != "",
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => EnlargedImage(imageUrl: path),
+                          ),
+                        );
+                      },
+                      child: Hero(
+                        tag: 'imageHero',
+                        child: Image.file(File(path!), width: 50, height: 50),
+                      ),
+                    )
+                  ),
                   title: Text(title),
                   subtitle: Text("$description\n$address\n$date"),
                   dense: true,
@@ -985,12 +1082,63 @@ class _MyHomePageState extends State<MyHomePage> {
                         icon: const Icon(Icons.delete),
                         onPressed: () {
                           showMessageWithCancel("Do you want to delete this log?", () async {
-                            _context.pop();
-                            if (key != null) {
-                              Box<LocData> box = await Hive.openBox<LocData>('log');
-                              box.delete(key);
+                            Navigator.of(_context).pop();
+
+                            try {
+                              if (key != null) {
+                                Box<LocData> box = await Hive.openBox<LocData>('log');
+                                box.delete(key);
+                              }
+
+                              if (path != "") {
+                                await File(path).delete();
+                              }
+                            } catch (e) {
+                              print(e);
                             }
+
                             _makeMarkers();
+                          });
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () {
+                          showMessageWithCancel("Do you want to edit this log?", () async {
+                            Navigator.of(_context).pop();
+
+                            try {
+                              final List<Map<String, Object>> jsonData = [{
+                                'title': title,
+                                'description': description,
+                                'date': date,
+                                'location': {'lat': location.lat, 'long': location.long},
+                                'address': address,
+                                'path': path,
+                              }];
+
+                              if (jsonData.isNotEmpty) {
+                                bool? update = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => AddEditPostScreen(logData: jsonData)),
+                                );
+
+                                if (update ?? false) {
+                                  try {
+                                    if (key != null) {
+                                      Box<LocData> box = await Hive.openBox<LocData>('log');
+                                      box.delete(key);
+                                    }
+                                  } catch (e) {
+                                    print(e);
+                                  }
+
+                                  _makeMarkers();
+                                }
+                              }
+                            } catch (e) {
+                              print(e);
+                            }
                           });
                         },
                       ),
@@ -1059,4 +1207,27 @@ class _MyHomePageState extends State<MyHomePage> {
 //       },
 //   );
 // }
+}
+
+class EnlargedImage extends StatelessWidget {
+  final String imageUrl;
+
+  const EnlargedImage({super.key, required this.imageUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Image'),
+      ),
+      body: InteractiveViewer(
+        child: Center(
+          child: Hero(
+            tag: 'imageHero', // 동일한 tag 값
+            child: Image.file(File(imageUrl)),
+          ),
+        ),
+      )
+    );
+  }
 }

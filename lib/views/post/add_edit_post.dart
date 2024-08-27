@@ -234,11 +234,19 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                     final bool shouldPop = await showMessageWithCancel("Do you want to save on local device?", () async {
                       Directory appDocDir = await getApplicationDocumentsDirectory();
                       String appDocPath = appDocDir.path;
+                      Box<LocData> box = await Hive.openBox<LocData>('log');
 
                       for (int i = 0; i < _logData.length; i++) {
                         _logData[i].title = _titleControllers[i].text;
                         _logData[i].description = _descriptionControllers[i].text;
                         _logData[i].address = _addressControllers[i].text;
+
+                        if (_logData[i].key != null) {
+                          await box.put(_logData[i].key, _logData[i]);
+                          _logData.removeAt(i);
+                          i--;
+                          continue;
+                        }
 
                         print(_logData[i].path);
                         if (_logData[i].path != null) {
@@ -248,7 +256,11 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                             File _image = File(_logData[i].path!);
 
                             if (filename != null) {
-                              final File localImage = await _image.copy('$appDocPath/$filename');
+                              final file = File('$appDocPath/$filename');
+
+                              // 파일 저장
+                              await file.writeAsBytes(_image.readAsBytesSync());
+
                               _logData[i].path = '$appDocPath/$filename';
                               print('$appDocPath/$filename');
                             }
@@ -258,8 +270,9 @@ class _AddEditPostState extends State<AddEditPostScreen> {
                         }
                       }
 
-                      Box<LocData> box = await Hive.openBox<LocData>('log');
-                      await box.addAll(_logData);
+                      if (_logData.isNotEmpty) {
+                        await box.addAll(_logData);
+                      }
 
                       print(box.values);
                     }, submit: true) ?? false;

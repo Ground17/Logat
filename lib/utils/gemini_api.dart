@@ -53,6 +53,9 @@ final getAddress = FunctionDeclaration(
       'address': Schema(SchemaType.string,
           description: 'address of where you go. '
               'Must be a real address'),
+      'reason': Schema(SchemaType.string,
+          description: 'The reason for choosing the place. '
+              'Explain reason in as much detail as possible.'),
     }, requiredProperties: [
       'address'
     ]));

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hive/hive.dart';
 import 'package:logat/main.dart';
 
+import '../../home.dart';
 import '../etc/webview.dart';
 
 class InitPage extends StatefulWidget {
@@ -92,8 +92,7 @@ class _InitPageState extends State<InitPage> {
                                   Box box = await Hive.openBox("setting");
                                   await box.put('initial', true);
 
-                                  // Navigator.of(this.context).pushReplacement(MaterialPageRoute(builder: (context) => const MyHomePage(title: 'Logat')),);
-                                  context.go('/initial');
+                                  Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (context) => const MyHomePage()),);
                                 }
                               },
                               child: const Text('I got it!',
