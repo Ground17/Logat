@@ -29,6 +29,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _textController = TextEditingController();
   final List<ChatMessage> _messages = [];
 
+  ScrollController _listviewScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -90,6 +92,12 @@ class _ChatScreenState extends State<ChatScreen> {
     _messages.add(ChatMessage(isUser: false, text: ""));
 
     await for (final chunk in response) {
+      _listviewScrollController.animateTo(
+        _listviewScrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOut,
+      );
+
       setState(() {
         _messages.last.text += chunk.text ?? "";
       });
@@ -104,6 +112,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Expanded(
             child: ListView.builder(
+              controller: _listviewScrollController,
               itemCount: _messages.length,
               padding: const EdgeInsets.all(16.0),
               itemBuilder: (context, index) {

@@ -53,10 +53,8 @@ class _MyHomePageState extends State<MyHomePage> {
   Timer? _apiTimer;
 
   late Completer<GoogleMapController> _controller = Completer<GoogleMapController>();
-  static const CameraPosition _kGooglePlex = CameraPosition(
-    target: LatLng(37.42796133580664, -122.085749655962),
-    zoom: 13.0,
-  );
+
+  static LatLng _kInitialPlace = LatLng(37.42796133580664, -122.085749655962);
 
   Future<void> _goToThePosition(double lat, double long) async {
     final GoogleMapController controller = await _controller.future;
@@ -308,6 +306,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+
     // Listen to media sharing coming from outside the app while the app is in the memory.
     _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen((value) async {
       _sharedFiles.clear();
@@ -389,6 +388,13 @@ class _MyHomePageState extends State<MyHomePage> {
     Box box = Hive.box("setting");
     bool autosave = box.get("location_autosave", defaultValue: false);
     print(autosave);
+
+    _latitude = box.get('myLatitude', defaultValue: _latitude);
+    _longitude = box.get('myLongitude', defaultValue: _longitude);
+
+    setState(() {
+      _kInitialPlace = LatLng(_latitude, _longitude);
+    });
 
     checkAutoSave(autosave);
   }
@@ -551,15 +557,11 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: GoogleMap(
         mapType: MapType.normal,
-        initialCameraPosition: _kGooglePlex,
+        initialCameraPosition: CameraPosition(
+          target: _kInitialPlace,
+          zoom: 13.0,
+        ),
         onMapCreated: (GoogleMapController controller) async {
-          Box box = await Hive.openBox("setting");
-
-          _latitude = box.get('myLatitude', defaultValue: _latitude);
-          _longitude = box.get('myLongitude', defaultValue: _longitude);
-
-          _goToThePosition(_latitude, _longitude);
-
           _controller = Completer<GoogleMapController>();
           _controller.complete(controller);
           _makeMarkers();
@@ -597,7 +599,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
           DateTime now = DateTime.now();
 
-          if (now.difference(_lastLocationUpdated).inSeconds > 5) {
+          if (now.difference(_lastLocationUpdated).inSeconds > 4) {
             try {
               Box box = await Hive.openBox("setting");
 
@@ -613,6 +615,7 @@ class _MyHomePageState extends State<MyHomePage> {
         myLocationEnabled: true,
         myLocationButtonEnabled: false,
         zoomControlsEnabled: false,
+        compassEnabled: false,
       ),
       floatingActionButton: Wrap(
         direction: Axis.vertical,
@@ -841,7 +844,7 @@ class _MyHomePageState extends State<MyHomePage> {
     Box<LocData> box = await Hive.openBox<LocData>('log');
     List<LocData> values = box.values.toList();
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 3; i++) {
       if (i >= values.length) {
         break;
       }
@@ -882,7 +885,42 @@ class _MyHomePageState extends State<MyHomePage> {
                     children: [
                       Icon(Icons.auto_awesome),
                       SizedBox(width: 10,),
-                      Text('Get next place recommendation'),
+                      Text('Ask to AI with current map location and logs', softWrap: true, overflow: TextOverflow.ellipsis,),
+                    ],
+                  ),
+                  onPressed: () async {
+                    if (await checkLocationAvailable()) {
+                      Navigator.pop(_context);
+
+                      List<String> markersInput = await _getMarkersInputToAI();
+
+                      if (markersInput.isEmpty) {
+                        showMessage("No data is available.");
+                        return;
+                      }
+
+                      String now = DateTime.now().toIso8601String();
+                      final data = await getReverseGeocoding(_latitude, _longitude);
+                      final currentAddress = data.isNotEmpty ? '${data[0]['text']} ' : '';
+                      final prompt = '\n\nprevious location I visited: $markersInput\n'
+                          'current location of me: $currentAddress(when: $now, latitude: $_latitude, long: $_longitude)';
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => ChatScreen(initialString: prompt,)),
+                      );
+                    } else {
+                      showMessage("I can't find the current location, please check the location settings.");
+                    }
+                  },
+                ),
+                ElevatedButton(
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_awesome),
+                      SizedBox(width: 10,),
+                      Text('Get next place recommendation', softWrap: true, overflow: TextOverflow.ellipsis,),
                     ],
                   ),
                   onPressed: () async {
@@ -903,7 +941,8 @@ class _MyHomePageState extends State<MyHomePage> {
                       final currentAddress = data.isNotEmpty ? '${data[0]['text']} ' : '';
                       final prompt = 'Find the address of where we need to go next by using the given information below. '
                           'Please recommend a place to visit nearby or recommend a place related to the anniversary using the date. '
-                          'Think step by step and explain reason in as much detail as possible.'
+                          'Think step by step and explain reason in as much detail as possible. '
+                          'You should not mention the place I went to before again.'
                           '\n\nprevious location I visited: $markersInput\n';
                           // 'current location of me: $currentAddress(when: $now, latitude: $_latitude, long: $_longitude)';
 
@@ -954,7 +993,7 @@ class _MyHomePageState extends State<MyHomePage> {
                     children: [
                       Icon(Icons.auto_awesome),
                       SizedBox(width: 10,),
-                      Text('Hide-and-seek with AI'),
+                      Text('Hide-and-seek with AI', softWrap: true, overflow: TextOverflow.ellipsis,),
                     ],
                   ),
                   onPressed: () async {
@@ -975,41 +1014,6 @@ class _MyHomePageState extends State<MyHomePage> {
                         setEnemyDirection(); // timer가 수행해야 할 함수 호출: timer 내 코드가 맨 처음에는 수행되지 않음
                         _startTimer();
                       }
-                    } else {
-                      showMessage("I can't find the current location, please check the location settings.");
-                    }
-                  },
-                ),
-                ElevatedButton(
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.auto_awesome),
-                      SizedBox(width: 10,),
-                      Text('Ask to AI with current map location and logs'),
-                    ],
-                  ),
-                  onPressed: () async {
-                    if (await checkLocationAvailable()) {
-                      Navigator.pop(_context);
-
-                      List<String> markersInput = await _getMarkersInputToAI();
-
-                      if (markersInput.isEmpty) {
-                        showMessage("No data is available.");
-                        return;
-                      }
-
-                      String now = DateTime.now().toIso8601String();
-                      final data = await getReverseGeocoding(_latitude, _longitude);
-                      final currentAddress = data.isNotEmpty ? '${data[0]['text']} ' : '';
-                      final prompt = '\n\nprevious location I visited: $markersInput\n'
-                          'current location of me: $currentAddress(when: $now, latitude: $_latitude, long: $_longitude)';
-
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => ChatScreen(initialString: prompt,)),
-                      );
                     } else {
                       showMessage("I can't find the current location, please check the location settings.");
                     }
@@ -1051,7 +1055,7 @@ class _MyHomePageState extends State<MyHomePage> {
               children: <Widget>[
                 ListTile(
                   leading: Visibility(
-                    visible: (path ?? "") != "",
+                    visible: path != "" && File(path!).existsSync(),
                     child: GestureDetector(
                       onTap: () {
                         Navigator.push(

@@ -48,7 +48,7 @@ final addressModel = GenerativeModel(
 
 final getAddress = FunctionDeclaration(
     'getAddress',
-    'Find the proper Address of where you need to go by using the given information.',
+    'Find the proper Address of where you need to go by using the given information. Must not mention the place I went to before again.',
     Schema(SchemaType.object, properties: {
       'address': Schema(SchemaType.string,
           description: 'address of where you go. '
