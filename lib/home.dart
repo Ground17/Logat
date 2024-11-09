@@ -987,38 +987,38 @@ class _MyHomePageState extends State<MyHomePage> {
                     });
                   },
                 ),
-                ElevatedButton(
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.auto_awesome),
-                      SizedBox(width: 10,),
-                      Text('Hide-and-seek with AI', softWrap: true, overflow: TextOverflow.ellipsis,),
-                    ],
-                  ),
-                  onPressed: () async {
-                    if (await checkLocationAvailable()) {
-                      Navigator.pop(_context);
-
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => ChaserSettingScreen(lat: _latitude, long: _longitude,)),
-                      );
-
-                      if (result != null) {
-                        setState(() {
-                          enemies = result;
-                        });
-
-                        _startTime = DateTime.now();
-                        setEnemyDirection(); // timer가 수행해야 할 함수 호출: timer 내 코드가 맨 처음에는 수행되지 않음
-                        _startTimer();
-                      }
-                    } else {
-                      showMessage("I can't find the current location, please check the location settings.");
-                    }
-                  },
-                ),
+                // ElevatedButton(
+                //   child: const Row(
+                //     mainAxisSize: MainAxisSize.min,
+                //     children: [
+                //       Icon(Icons.auto_awesome),
+                //       SizedBox(width: 10,),
+                //       Text('Hide-and-seek with AI', softWrap: true, overflow: TextOverflow.ellipsis,),
+                //     ],
+                //   ),
+                //   onPressed: () async {
+                //     if (await checkLocationAvailable()) {
+                //       Navigator.pop(_context);
+                //
+                //       final result = await Navigator.push(
+                //         context,
+                //         MaterialPageRoute(builder: (context) => ChaserSettingScreen(lat: _latitude, long: _longitude,)),
+                //       );
+                //
+                //       if (result != null) {
+                //         setState(() {
+                //           enemies = result;
+                //         });
+                //
+                //         _startTime = DateTime.now();
+                //         setEnemyDirection(); // timer가 수행해야 할 함수 호출: timer 내 코드가 맨 처음에는 수행되지 않음
+                //         _startTimer();
+                //       }
+                //     } else {
+                //       showMessage("I can't find the current location, please check the location settings.");
+                //     }
+                //   },
+                // ),
               ],
             ),
           ),
