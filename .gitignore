@@ -41,6 +41,8 @@ lib/ad_helper.dart
 lib/key.dart
 firebase_options.dart
 
+screenshots/
+
 ## Android related
 #**/android/**/gradle-wrapper.jar
 #**/android/.gradle

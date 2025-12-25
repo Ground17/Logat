@@ -1,72 +1,74 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
-import 'package:hive_flutter/adapters.dart';
-import 'package:logat/utils/structure.dart';
-import 'package:logat/views/auth/init_page.dart';
+import 'screens/feed_screen.dart';
+import 'screens/setup_screen.dart';
+import 'services/settings_service.dart';
 
-import 'home.dart';
-
-// import 'package:google_mobile_ads/google_mobile_ads.dart';
-
-// Future<FirebaseApp> _initFirebase() {
-//   return Firebase.initializeApp(
-//     options: DefaultFirebaseOptions.currentPlatform,
-//   );
-// }
-//
-// Future<InitializationStatus> _initGoogleMobileAds() {
-//   return MobileAds.instance.initialize();
-// }
-
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  //
-  // try {
-  //   await _initFirebase();
-  //   await _initGoogleMobileAds();
-  // } on FirebaseAuthException catch (e) {
-  //   switch (e.code) {
-  //     case "operation-not-allowed":
-  //       print("Anonymous auth hasn't been enabled for this project.");
-  //       break;
-  //     default:
-  //       print("Unknown error.");
-  //   }
-  // }
-  await Hive.initFlutter();
-
-  Hive.registerAdapter(LocDataAdapter());
-  Hive.registerAdapter(LocAdapter());
-
-  Box box = await Hive.openBox("setting");
-
-  runApp(MyApp(isNotInit: box.get('initial', defaultValue: false)));
+void main() {
+  runApp(const MyApp(isNotInit: false,));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key, required this.isNotInit}) : super(key: key);
-
-  final bool isNotInit;
+  const MyApp({Key? key, required bool isNotInit}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      key: key,
       title: 'Logat',
       theme: ThemeData(
-        brightness: Brightness.light,
+        primarySwatch: Colors.blue,
         useMaterial3: true,
-        colorSchemeSeed: Colors.blue[800],
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.light,
+        ),
       ),
       darkTheme: ThemeData(
-        brightness: Brightness.dark,
         useMaterial3: true,
-        colorSchemeSeed: Colors.blue[800],
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.dark,
+        ),
       ),
       themeMode: ThemeMode.system,
-      home: isNotInit ? const MyHomePage() : const InitPage(),
+      home: const SplashScreen(),
       debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({Key? key}) : super(key: key);
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _checkFirstTime();
+  }
+
+  Future<void> _checkFirstTime() async {
+    final isFirstTime = await SettingsService.isFirstTime();
+
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) =>
+              isFirstTime ? const SetupScreen() : const FeedScreen(),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
     );
   }
 }
