@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/ai_persona.dart';
 import '../models/chat_message.dart';
 import '../database/database_helper.dart';
+import '../widgets/avatar_widget.dart';
 import '../services/ai_service.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -114,16 +115,18 @@ class _ChatScreenState extends State<ChatScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('대화 내역 삭제'),
-        content: const Text('이 친구와의 모든 대화 내역을 삭제하시겠어요?'),
+        title: const Text('Delete Conversation'),
+        content: const Text(
+          'Do you want to delete all messages in this conversation?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
+            child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('삭제'),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -133,7 +136,7 @@ class _ChatScreenState extends State<ChatScreen> {
       await _db.deleteChatMessages(widget.persona.id!);
       await _loadMessages();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('대화 내역이 삭제되었습니다')),
+        const SnackBar(content: Text('Conversation has been deleted')),
       );
     }
   }
@@ -144,7 +147,10 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            Text(widget.persona.avatar, style: const TextStyle(fontSize: 24)),
+            AvatarWidget(
+              avatar: widget.persona.avatar,
+              size: 32,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -180,7 +186,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 builder: (context) => AlertDialog(
                   title: Row(
                     children: [
-                      Text(widget.persona.avatar, style: const TextStyle(fontSize: 32)),
+                      AvatarWidget(
+                        avatar: widget.persona.avatar,
+                        size: 40,
+                      ),
                       const SizedBox(width: 12),
                       Text(widget.persona.name),
                     ],
@@ -229,9 +238,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
-                              widget.persona.avatar,
-                              style: const TextStyle(fontSize: 64),
+                            AvatarWidget(
+                              avatar: widget.persona.avatar,
+                              size: 80,
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -338,7 +347,10 @@ class MessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!message.isUser) ...[
-            Text(persona.avatar, style: const TextStyle(fontSize: 32)),
+            AvatarWidget(
+              avatar: persona.avatar,
+              size: 40,
+            ),
             const SizedBox(width: 8),
           ],
           Flexible(

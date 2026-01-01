@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import '../models/ai_persona.dart';
 import '../database/database_helper.dart';
+import '../services/ai_service.dart';
 
 class EditPersonaScreen extends StatefulWidget {
   final AiPersona? persona;
@@ -22,7 +25,7 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
   late TextEditingController _systemPromptController;
   late TextEditingController _bioController;
 
-  late AiProvider _selectedProvider;
+  late AiModel _selectedModel;
   late double _commentProbability;
   late double _likeProbability;
   bool _isSaving = false;
@@ -39,7 +42,7 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
     _systemPromptController = TextEditingController(text: persona?.systemPrompt ?? '');
     _bioController = TextEditingController(text: persona?.bio ?? '');
 
-    _selectedProvider = persona?.aiProvider ?? AiProvider.gemini;
+    _selectedModel = persona?.aiModel ?? AiModel.gemini3FlashPreview;
     _commentProbability = persona?.commentProbability ?? 0.5;
     _likeProbability = persona?.likeProbability ?? 0.7;
   }
@@ -53,6 +56,121 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
     _systemPromptController.dispose();
     _bioController.dispose();
     super.dispose();
+  }
+
+  /// Check if text is a file path
+  bool _isImagePath(String text) {
+    return text.contains('/') && 
+           (text.endsWith('.png') || text.endsWith('.jpg') || text.endsWith('.jpeg') || text.endsWith('.webp'));
+  }
+
+  /// Pick image from gallery
+  Future<void> _pickImageFromGallery() async {
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+      if (pickedFile != null) {
+        setState(() {
+          _avatarController.text = pickedFile.path;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick image: $e')),
+        );
+      }
+    }
+  }
+
+  /// Show custom edit prompt dialog
+  void _showCustomEditPrompt(String imagePath) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Avatar'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Describe the edits you want to make:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'e.g., Make the background transparent, enhance colors',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _editImageWithAI(imagePath, controller.text);
+            },
+            child: const Text('Apply Edit'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Edit image using AI
+  Future<void> _editImageWithAI(String imagePath, String editPrompt) async {
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      final editedImagePath = await AiService.editAvatarImage(
+        imagePath: imagePath,
+        editPrompt: editPrompt,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+
+        if (editedImagePath != null) {
+          setState(() {
+            _avatarController.text = editedImagePath;
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Avatar edited successfully!'),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to edit avatar. Please try again.'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error editing avatar: $e'),
+          ),
+        );
+      }
+    }
   }
 
   void _showAvatarOptions() {
@@ -72,6 +190,14 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.image),
+              title: const Text('Pick from Gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImageFromGallery();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.auto_awesome),
               title: const Text('Generate AI Avatar'),
               subtitle: const Text('Create avatar using AI image generation'),
@@ -80,6 +206,16 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
                 _generateAiAvatar();
               },
             ),
+            if (_isImagePath(_avatarController.text))
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Edit with AI'),
+                subtitle: const Text('Modify current avatar image'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showCustomEditPrompt(_avatarController.text);
+                },
+              ),
           ],
         ),
       ),
@@ -146,7 +282,7 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
             TextField(
               controller: controller,
               decoration: const InputDecoration(
-                hintText: 'e.g., A friendly robot face',
+                hintText: 'e.g., A friendly robot face, A cute cat character',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
@@ -167,7 +303,7 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
     );
 
     if (description != null && description.isNotEmpty) {
-      // Show loading
+      // Show loading dialog
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -176,31 +312,42 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
         ),
       );
 
-      // For now, we'll use a placeholder emoji based on keywords
-      // In a real implementation, you would call an AI image generation API
-      String generatedEmoji = '🤖';
-
-      if (description.toLowerCase().contains('robot')) generatedEmoji = '🤖';
-      else if (description.toLowerCase().contains('cat')) generatedEmoji = '🐱';
-      else if (description.toLowerCase().contains('dog')) generatedEmoji = '🐶';
-      else if (description.toLowerCase().contains('star')) generatedEmoji = '⭐';
-      else if (description.toLowerCase().contains('heart')) generatedEmoji = '❤️';
-      else if (description.toLowerCase().contains('smile')) generatedEmoji = '😊';
-      else if (description.toLowerCase().contains('cool')) generatedEmoji = '😎';
-
-      await Future.delayed(const Duration(seconds: 1));
-
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        setState(() {
-          _avatarController.text = generatedEmoji;
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('AI avatar generated! (Using emoji placeholder)'),
-          ),
+      try {
+        // Generate image using DALL-E
+        final imagePath = await AiService.generateAvatarImage(
+          description: description,
         );
+
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+
+          if (imagePath != null) {
+            setState(() {
+              _avatarController.text = imagePath;
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('AI avatar generated successfully!'),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to generate avatar image. Please try again.'),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error generating avatar: $e'),
+            ),
+          );
+        }
       }
     }
   }
@@ -221,7 +368,7 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
         personality: _personalityController.text,
         systemPrompt: _systemPromptController.text,
         bio: _bioController.text.isEmpty ? null : _bioController.text,
-        aiProvider: _selectedProvider,
+        aiModel: _selectedModel,
         commentProbability: _commentProbability,
         likeProbability: _likeProbability,
       );
@@ -260,18 +407,28 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(isEditing ? 'Edit Persona' : 'Create Persona'),
+        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
         actions: [
           TextButton(
             onPressed: _isSaving ? null : _savePersona,
             child: _isSaving
-                ? const SizedBox(
+                ? SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
                   )
-                : const Text(
+                : Text(
                     'Save',
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
           ),
         ],
@@ -316,24 +473,62 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
                   ),
                   child: Row(
                     children: [
-                      Text(
-                        _avatarController.text,
-                        style: const TextStyle(fontSize: 48),
+                      // Avatar display - emoji or image
+                      SizedBox(
+                        width: 64,
+                        height: 64,
+                        child: _avatarController.text.isEmpty
+                            ? Container(
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey.shade300),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.image),
+                              )
+                            : _isImagePath(_avatarController.text)
+                                ? Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Colors.grey.shade300),
+                                      borderRadius: BorderRadius.circular(8),
+                                      image: DecorationImage(
+                                        image: FileImage(File(_avatarController.text)),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  )
+                                : Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Colors.grey.shade300),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        _avatarController.text,
+                                        style: const TextStyle(fontSize: 40),
+                                      ),
+                                    ),
+                                  ),
                       ),
                       const SizedBox(width: 16),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
+                            const Text(
                               'Avatar',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey,
                               ),
                             ),
-                            SizedBox(height: 4),
-                            Text('Tap to change emoji or generate AI avatar'),
+                            const SizedBox(height: 4),
+                            Text(
+                              _isImagePath(_avatarController.text)
+                                  ? 'AI-generated avatar'
+                                  : 'Tap to change emoji or generate AI avatar',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ],
                         ),
                       ),
@@ -415,28 +610,53 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
               ),
               const SizedBox(height: 16),
 
-              // AI Provider
+              // AI Model Selection
+              const Text(
+                'AI Model',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
               Card(
                 child: Column(
                   children: [
-                    RadioListTile<AiProvider>(
-                      value: AiProvider.gemini,
-                      groupValue: _selectedProvider,
+                    RadioListTile<AiModel>(
+                      value: AiModel.gemini3FlashPreview,
+                      groupValue: _selectedModel,
                       onChanged: (value) {
-                        setState(() => _selectedProvider = value!);
+                        setState(() => _selectedModel = value!);
                       },
-                      title: const Text('Google Gemini'),
-                      subtitle: const Text('Recommended'),
+                      title: const Text('Gemini 3 Flash Preview'),
+                      subtitle: const Text('Fast and efficient'),
                     ),
                     const Divider(height: 1),
-                    RadioListTile<AiProvider>(
-                      value: AiProvider.openai,
-                      groupValue: _selectedProvider,
+                    RadioListTile<AiModel>(
+                      value: AiModel.gemini3ProPreview,
+                      groupValue: _selectedModel,
                       onChanged: (value) {
-                        setState(() => _selectedProvider = value!);
+                        setState(() => _selectedModel = value!);
                       },
-                      title: const Text('OpenAI GPT'),
-                      subtitle: const Text('Alternative'),
+                      title: const Text('Gemini 3 Pro Preview'),
+                      subtitle: const Text('More capable'),
+                    ),
+                    const Divider(height: 1),
+                    RadioListTile<AiModel>(
+                      value: AiModel.gpt51,
+                      groupValue: _selectedModel,
+                      onChanged: (value) {
+                        setState(() => _selectedModel = value!);
+                      },
+                      title: const Text('GPT-5.1'),
+                      subtitle: const Text('OpenAI model'),
+                    ),
+                    const Divider(height: 1),
+                    RadioListTile<AiModel>(
+                      value: AiModel.gpt52,
+                      groupValue: _selectedModel,
+                      onChanged: (value) {
+                        setState(() => _selectedModel = value!);
+                      },
+                      title: const Text('GPT-5.2'),
+                      subtitle: const Text('Latest OpenAI model'),
                     ),
                   ],
                 ),

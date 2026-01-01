@@ -3,7 +3,9 @@ import '../models/ai_persona.dart';
 import '../models/app_settings.dart';
 import '../database/database_helper.dart';
 import '../services/settings_service.dart';
+import '../widgets/avatar_widget.dart';
 import 'persona_management_screen.dart';
+import 'tag_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -44,10 +46,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settings = await SettingsService.loadSettings();
     final updatedSettings = AppSettings(
       enabledPersonaIds: _selectedPersonaIds.toList(),
-      aiProvider: settings.aiProvider,
       commentProbability: settings.commentProbability,
       likeProbability: settings.likeProbability,
       isFirstTime: false,
+      userProfile: settings.userProfile,
     );
 
     await SettingsService.saveSettings(updatedSettings);
@@ -119,6 +121,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       },
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.label),
+                      title: const Text('Tag Settings'),
+                      subtitle: const Text('Customize tag names'),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const TagSettingsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
 
                   const SizedBox(height: 24),
                   const Divider(),
@@ -152,9 +171,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 }
                               });
                             },
-                            secondary: Text(
-                              persona.avatar,
-                              style: const TextStyle(fontSize: 32),
+                            secondary: AvatarWidget(
+                              avatar: persona.avatar,
+                              size: 48,
                             ),
                             title: Text(persona.name),
                             subtitle: Text(persona.role),
@@ -172,7 +191,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       const Icon(Icons.auto_awesome, size: 16, color: Colors.grey),
                                       const SizedBox(width: 8),
                                       Text(
-                                        'AI Provider: ${persona.aiProvider == AiProvider.gemini ? 'Gemini' : 'OpenAI'}',
+                                        'AI Model: ${persona.aiModel.displayName}',
                                         style: const TextStyle(fontSize: 13, color: Colors.grey),
                                       ),
                                     ],

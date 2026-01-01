@@ -1,13 +1,12 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_settings.dart';
-import '../models/ai_persona.dart';
 
 class SettingsService {
   static const String _keyEnabledPersonas = 'enabled_personas';
-  static const String _keyAiProvider = 'ai_provider';
   static const String _keyCommentProbability = 'comment_probability';
   static const String _keyLikeProbability = 'like_probability';
   static const String _keyIsFirstTime = 'is_first_time';
+  static const String _keyUserProfile = 'user_profile';
 
   static Future<AppSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -25,18 +24,16 @@ class SettingsService {
         .map((s) => int.parse(s))
         .toList();
 
-    final aiProviderIndex = prefs.getInt(_keyAiProvider) ?? 0;
-    final aiProvider = AiProvider.values[aiProviderIndex];
-
     final commentProbability = prefs.getDouble(_keyCommentProbability) ?? 0.5;
     final likeProbability = prefs.getDouble(_keyLikeProbability) ?? 0.7;
+    final userProfile = prefs.getString(_keyUserProfile) ?? '';
 
     return AppSettings(
       enabledPersonaIds: enabledPersonaIds,
-      aiProvider: aiProvider,
       commentProbability: commentProbability,
       likeProbability: likeProbability,
       isFirstTime: false,
+      userProfile: userProfile,
     );
   }
 
@@ -47,10 +44,10 @@ class SettingsService {
       _keyEnabledPersonas,
       settings.enabledPersonaIds.join(','),
     );
-    await prefs.setInt(_keyAiProvider, settings.aiProvider.index);
     await prefs.setDouble(_keyCommentProbability, settings.commentProbability);
     await prefs.setDouble(_keyLikeProbability, settings.likeProbability);
     await prefs.setBool(_keyIsFirstTime, settings.isFirstTime);
+    await prefs.setString(_keyUserProfile, settings.userProfile);
   }
 
   static Future<bool> isFirstTime() async {

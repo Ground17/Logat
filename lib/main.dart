@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'screens/feed_screen.dart';
 import 'screens/setup_screen.dart';
 import 'services/settings_service.dart';
+import 'utils/media_migration.dart';
 
 void main() {
   runApp(const MyApp(isNotInit: false,));
@@ -51,6 +52,10 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkFirstTime() async {
+    // Check and migrate media files to permanent storage
+    await MediaMigration.logMediaStats();
+    await MediaMigration.checkAndMigratePostMedia();
+
     final isFirstTime = await SettingsService.isFirstTime();
 
     if (mounted) {

@@ -3,6 +3,7 @@ import '../models/ai_persona.dart';
 import '../models/app_settings.dart';
 import '../database/database_helper.dart';
 import '../services/settings_service.dart';
+import '../widgets/avatar_widget.dart';
 import 'feed_screen.dart';
 
 class SetupScreen extends StatefulWidget {
@@ -14,6 +15,7 @@ class SetupScreen extends StatefulWidget {
 
 class _SetupScreenState extends State<SetupScreen> {
   final DatabaseHelper _db = DatabaseHelper.instance;
+  final TextEditingController _userProfileController = TextEditingController();
   List<AiPersona> _allPersonas = [];
   Set<int> _selectedPersonaIds = {1, 2, 3, 4, 5, 6};
   bool _isLoading = true;
@@ -22,6 +24,12 @@ class _SetupScreenState extends State<SetupScreen> {
   void initState() {
     super.initState();
     _loadPersonas();
+  }
+
+  @override
+  void dispose() {
+    _userProfileController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPersonas() async {
@@ -36,10 +44,10 @@ class _SetupScreenState extends State<SetupScreen> {
     // Use default values from AppSettings
     final settings = AppSettings(
       enabledPersonaIds: _selectedPersonaIds.toList(),
-      aiProvider: AiProvider.gemini,
       commentProbability: 0.5,
       likeProbability: 0.7,
       isFirstTime: false,
+      userProfile: _userProfileController.text.trim(),
     );
 
     await SettingsService.saveSettings(settings);
@@ -70,8 +78,31 @@ class _SetupScreenState extends State<SetupScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Select which AI personas will interact with your posts. You can configure each persona\'s settings later.',
+                    'Tell us about yourself and select AI friends to interact with your posts.',
                     style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // User Profile Section
+                  const Text(
+                    'About You',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Tell your AI friends about yourself so they can give better reactions',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _userProfileController,
+                    decoration: const InputDecoration(
+                      labelText: 'Your Profile',
+                      hintText: 'E.g., I love traveling, photography, and trying new food...',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                    maxLines: 3,
                   ),
                   const SizedBox(height: 24),
 
@@ -98,9 +129,9 @@ class _SetupScreenState extends State<SetupScreen> {
                                 }
                               });
                             },
-                            secondary: Text(
-                              persona.avatar,
-                              style: const TextStyle(fontSize: 32),
+                            secondary: AvatarWidget(
+                              avatar: persona.avatar,
+                              size: 48,
                             ),
                             title: Text(persona.name),
                             subtitle: Text(persona.role),
@@ -119,10 +150,14 @@ class _SetupScreenState extends State<SetupScreen> {
                                   const SizedBox(height: 12),
                                   Row(
                                     children: [
-                                      const Icon(Icons.auto_awesome, size: 14, color: Colors.grey),
+                                      Icon(
+                                        persona.aiModel.isGemini ? Icons.auto_awesome : Icons.chat_bubble_outline,
+                                        size: 14,
+                                        color: Colors.grey,
+                                      ),
                                       const SizedBox(width: 6),
                                       Text(
-                                        persona.aiProvider == AiProvider.gemini ? 'Gemini' : 'OpenAI',
+                                        persona.aiModel.displayName,
                                         style: const TextStyle(fontSize: 12, color: Colors.grey),
                                       ),
                                       const SizedBox(width: 16),

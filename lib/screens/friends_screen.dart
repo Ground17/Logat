@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/ai_persona.dart';
 import '../database/database_helper.dart';
+import '../widgets/avatar_widget.dart';
 import 'chat_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
@@ -34,7 +35,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI 친구들'),
+        title: const Text('AI Friends'),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -82,19 +83,9 @@ class PersonaCard extends StatelessWidget {
           child: Row(
             children: [
               // 아바타
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Center(
-                  child: Text(
-                    persona.avatar,
-                    style: const TextStyle(fontSize: 32),
-                  ),
-                ),
+              AvatarWidget(
+                avatar: persona.avatar,
+                size: 60,
               ),
               const SizedBox(width: 16),
 

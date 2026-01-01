@@ -5,6 +5,8 @@ import '../models/comment.dart';
 import '../models/like.dart';
 import '../models/ai_persona.dart';
 import '../database/database_helper.dart';
+import '../widgets/avatar_widget.dart';
+import '../widgets/video_player_widget.dart';
 import 'chat_screen.dart';
 import 'edit_post_screen.dart';
 
@@ -22,10 +24,12 @@ class PostDetailScreen extends StatefulWidget {
 
 class _PostDetailScreenState extends State<PostDetailScreen> {
   final DatabaseHelper _db = DatabaseHelper.instance;
+  final TextEditingController _commentController = TextEditingController();
   List<Comment> _comments = [];
   List<Like> _likes = [];
   Map<int, AiPersona> _personas = {};
   bool _isLoading = true;
+  bool _userLiked = false;
   late Post _post;
 
   @override
@@ -34,6 +38,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _post = widget.post;
     _loadData();
     _incrementViewCount();
+  }
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -49,6 +59,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final comments = await _db.getCommentsByPost(_post.id!);
     final likes = await _db.getLikesByPost(_post.id!);
 
+    // 사용자가 좋아요를 눌렀는지 확인
+    final userLiked = likes.any((like) => like.isUser);
+
     // AI 페르소나 정보 로드
     final allPersonas = await _db.getAllPersonas();
     final personaMap = <int, AiPersona>{};
@@ -59,9 +72,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     setState(() {
       _comments = comments;
       _likes = likes;
+      _userLiked = userLiked;
       _personas = personaMap;
       _isLoading = false;
     });
+  }
+
+  Future<void> _toggleLike() async {
+    if (_userLiked) {
+      // Unlike
+      await _db.deleteLike(_post.id!, isUser: true);
+    } else {
+      // Like
+      await _db.createLike(Like(
+        postId: _post.id!,
+        isUser: true,
+      ));
+    }
+    _loadData();
+  }
+
+  Future<void> _addComment() async {
+    if (_commentController.text.trim().isEmpty) return;
+
+    await _db.createComment(Comment(
+      postId: _post.id!,
+      isUser: true,
+      content: _commentController.text.trim(),
+    ));
+
+    _commentController.clear();
+    _loadData();
   }
 
   Future<void> _incrementViewCount() async {
@@ -148,16 +189,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         return Stack(
                           children: [
                             isVideo
-                                ? Container(
-                                    color: Colors.black,
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.play_circle_outline,
-                                        size: 64,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  )
+                                ? VideoPlayerWidget(videoPath: mediaPath)
                                 : File(mediaPath).existsSync()
                                     ? Image.file(
                                         File(mediaPath),
@@ -203,16 +235,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 좋아요, 댓글, 조회수
+                        // 좋아요, 댓글, 조회수 + 좋아요 버튼
                         Row(
                           children: [
-                            const Icon(Icons.favorite, color: Colors.red),
-                            const SizedBox(width: 4),
+                            IconButton(
+                              icon: Icon(
+                                _userLiked ? Icons.favorite : Icons.favorite_border,
+                                color: _userLiked ? Colors.red : Colors.grey,
+                              ),
+                              onPressed: _toggleLike,
+                            ),
                             Text(
                               '${_post.likeCount}',
                               style: const TextStyle(fontSize: 16),
                             ),
-                            const SizedBox(width: 24),
+                            const SizedBox(width: 16),
                             const Icon(Icons.chat_bubble_outline),
                             const SizedBox(width: 4),
                             Text(
@@ -237,14 +274,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ],
 
-                        if (_post.location != null) ...[
+                        if (_post.locationName != null) ...[
                           const SizedBox(height: 8),
                           Row(
                             children: [
                               const Icon(Icons.location_on, size: 16, color: Colors.grey),
                               const SizedBox(width: 4),
                               Text(
-                                _post.location!,
+                                _post.locationName!,
                                 style: const TextStyle(color: Colors.grey),
                               ),
                             ],
@@ -275,10 +312,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           Wrap(
                             spacing: 8,
                             children: _likes.map((like) {
+                              if (like.isUser) {
+                                return const Chip(
+                                  avatar: Icon(Icons.person, size: 16),
+                                  label: Text('You'),
+                                );
+                              }
                               final persona = _personas[like.aiPersonaId];
                               if (persona == null) return const SizedBox.shrink();
                               return Chip(
-                                avatar: Text(persona.avatar),
+                                avatar: AvatarWidget(
+                                  avatar: persona.avatar,
+                                  size: 24,
+                                ),
                                 label: Text(persona.name),
                               );
                             }).toList(),
@@ -309,6 +355,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         ),
                         const SizedBox(height: 12),
 
+                        // Comment input
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _commentController,
+                                  decoration: const InputDecoration(
+                                    hintText: 'Write a comment...',
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                  maxLines: null,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(Icons.send),
+                                onPressed: _addComment,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
                         if (_comments.isEmpty)
                           const Center(
                             child: Padding(
@@ -326,6 +402,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             itemCount: _comments.length,
                             itemBuilder: (context, index) {
                               final comment = _comments[index];
+
+                              if (comment.isUser) {
+                                return UserCommentCard(comment: comment);
+                              }
+
                               final persona = _personas[comment.aiPersonaId];
                               if (persona == null) return const SizedBox.shrink();
 
@@ -370,6 +451,76 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 }
 
+class UserCommentCard extends StatelessWidget {
+  final Comment comment;
+
+  const UserCommentCard({
+    Key? key,
+    required this.comment,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: Colors.blue[50],
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.person, size: 24, color: Colors.blue),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'You',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(comment.content),
+            const SizedBox(height: 4),
+            Text(
+              _formatDate(comment.createdAt),
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inDays > 0) {
+      return '${diff.inDays}d ago';
+    } else if (diff.inHours > 0) {
+      return '${diff.inHours}h ago';
+    } else if (diff.inMinutes > 0) {
+      return '${diff.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
+  }
+}
+
 class CommentCard extends StatelessWidget {
   final Comment comment;
   final AiPersona persona;
@@ -395,9 +546,9 @@ class CommentCard extends StatelessWidget {
               onTap: onTapPersona,
               child: Row(
                 children: [
-                  Text(
-                    persona.avatar,
-                    style: const TextStyle(fontSize: 24),
+                  AvatarWidget(
+                    avatar: persona.avatar,
+                    size: 40,
                   ),
                   const SizedBox(width: 8),
                   Expanded(

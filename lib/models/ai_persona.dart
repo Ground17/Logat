@@ -1,4 +1,45 @@
-enum AiProvider { gemini, openai }
+enum AiModel {
+  gemini3FlashPreview,
+  gemini3ProPreview,
+  gpt51,
+  gpt52,
+}
+
+extension AiModelExtension on AiModel {
+  String get displayName {
+    switch (this) {
+      case AiModel.gemini3FlashPreview:
+        return 'Gemini 3 Flash Preview';
+      case AiModel.gemini3ProPreview:
+        return 'Gemini 3 Pro Preview';
+      case AiModel.gpt51:
+        return 'GPT-5.1';
+      case AiModel.gpt52:
+        return 'GPT-5.2';
+    }
+  }
+
+  String get modelId {
+    switch (this) {
+      case AiModel.gemini3FlashPreview:
+        return 'gemini-3-flash-preview';
+      case AiModel.gemini3ProPreview:
+        return 'gemini-3-pro-preview';
+      case AiModel.gpt51:
+        return 'gpt-5.1';
+      case AiModel.gpt52:
+        return 'gpt-5.2';
+    }
+  }
+
+  bool get isGemini {
+    return this == AiModel.gemini3FlashPreview || this == AiModel.gemini3ProPreview;
+  }
+
+  bool get isOpenAI {
+    return this == AiModel.gpt51 || this == AiModel.gpt52;
+  }
+}
 
 class AiPersona {
   final int? id;
@@ -8,7 +49,7 @@ class AiPersona {
   final String personality;
   final String systemPrompt;
   final String? bio;
-  final AiProvider aiProvider;
+  final AiModel aiModel;
   final double commentProbability;
   final double likeProbability;
 
@@ -20,7 +61,7 @@ class AiPersona {
     required this.personality,
     required this.systemPrompt,
     this.bio,
-    this.aiProvider = AiProvider.gemini,
+    this.aiModel = AiModel.gemini3FlashPreview,
     this.commentProbability = 0.5,
     this.likeProbability = 0.7,
   });
@@ -34,7 +75,7 @@ class AiPersona {
       'personality': personality,
       'systemPrompt': systemPrompt,
       'bio': bio,
-      'aiProvider': aiProvider.index,
+      'aiModel': aiModel.index,
       'commentProbability': commentProbability,
       'likeProbability': likeProbability,
     };
@@ -49,7 +90,7 @@ class AiPersona {
       personality: map['personality'] as String,
       systemPrompt: map['systemPrompt'] as String,
       bio: map['bio'] as String?,
-      aiProvider: AiProvider.values[map['aiProvider'] as int? ?? 0],
+      aiModel: AiModel.values[map['aiModel'] as int? ?? 0],
       commentProbability: map['commentProbability'] as double? ?? 0.5,
       likeProbability: map['likeProbability'] as double? ?? 0.7,
     );
@@ -63,7 +104,7 @@ class AiPersona {
     String? personality,
     String? systemPrompt,
     String? bio,
-    AiProvider? aiProvider,
+    AiModel? aiModel,
     double? commentProbability,
     double? likeProbability,
   }) {
@@ -75,7 +116,7 @@ class AiPersona {
       personality: personality ?? this.personality,
       systemPrompt: systemPrompt ?? this.systemPrompt,
       bio: bio ?? this.bio,
-      aiProvider: aiProvider ?? this.aiProvider,
+      aiModel: aiModel ?? this.aiModel,
       commentProbability: commentProbability ?? this.commentProbability,
       likeProbability: likeProbability ?? this.likeProbability,
     );

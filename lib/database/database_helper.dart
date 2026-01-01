@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/post.dart';
@@ -25,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 8,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -73,6 +74,127 @@ class DatabaseHelper {
       // Set updatedAt to createdAt for existing posts
       await db.execute('UPDATE posts SET updatedAt = createdAt WHERE updatedAt IS NULL');
     }
+
+    if (oldVersion < 5) {
+      // Add isUser field to comments and likes tables
+      await db.execute('ALTER TABLE comments ADD COLUMN isUser INTEGER DEFAULT 0');
+      await db.execute('ALTER TABLE likes ADD COLUMN isUser INTEGER DEFAULT 0');
+
+      // Make aiPersonaId nullable by recreating tables
+      // First, create temporary tables
+      await db.execute('''
+        CREATE TABLE comments_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          postId INTEGER NOT NULL,
+          aiPersonaId INTEGER,
+          isUser INTEGER DEFAULT 0,
+          content TEXT NOT NULL,
+          createdAt TEXT NOT NULL,
+          FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE likes_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          postId INTEGER NOT NULL,
+          aiPersonaId INTEGER,
+          isUser INTEGER DEFAULT 0,
+          createdAt TEXT NOT NULL,
+          FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
+        )
+      ''');
+
+      // Copy data
+      await db.execute('INSERT INTO comments_new SELECT id, postId, aiPersonaId, isUser, content, createdAt FROM comments');
+      await db.execute('INSERT INTO likes_new SELECT id, postId, aiPersonaId, isUser, createdAt FROM likes');
+
+      // Drop old tables and rename new ones
+      await db.execute('DROP TABLE comments');
+      await db.execute('DROP TABLE likes');
+      await db.execute('ALTER TABLE comments_new RENAME TO comments');
+      await db.execute('ALTER TABLE likes_new RENAME TO likes');
+    }
+
+    if (oldVersion < 6) {
+      // Rename aiProvider column to aiModel in ai_personas table
+      // SQLite doesn't support ALTER TABLE RENAME COLUMN in older versions
+      // So we need to recreate the table
+      await db.execute('''
+        CREATE TABLE ai_personas_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          avatar TEXT NOT NULL,
+          role TEXT NOT NULL,
+          personality TEXT NOT NULL,
+          systemPrompt TEXT NOT NULL,
+          bio TEXT,
+          aiModel INTEGER DEFAULT 0,
+          commentProbability REAL DEFAULT 0.5,
+          likeProbability REAL DEFAULT 0.7
+        )
+      ''');
+
+      // Copy data (aiProvider -> aiModel)
+      await db.execute('''
+        INSERT INTO ai_personas_new (id, name, avatar, role, personality, systemPrompt, bio, aiModel, commentProbability, likeProbability)
+        SELECT id, name, avatar, role, personality, systemPrompt, bio, aiProvider, commentProbability, likeProbability
+        FROM ai_personas
+      ''');
+
+      // Drop old table and rename new one
+      await db.execute('DROP TABLE ai_personas');
+      await db.execute('ALTER TABLE ai_personas_new RENAME TO ai_personas');
+    }
+
+    if (oldVersion < 7) {
+      // Add title, tag fields and rename location to locationName
+      await db.execute('ALTER TABLE posts ADD COLUMN title TEXT');
+      await db.execute('ALTER TABLE posts ADD COLUMN tag TEXT');
+
+      // Rename location to locationName by recreating the table
+      await db.execute('''
+        CREATE TABLE posts_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title TEXT,
+          mediaPaths TEXT NOT NULL,
+          caption TEXT,
+          locationName TEXT,
+          latitude REAL,
+          longitude REAL,
+          tag TEXT,
+          viewCount INTEGER DEFAULT 0,
+          likeCount INTEGER DEFAULT 0,
+          enableAiReactions INTEGER DEFAULT 1,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        )
+      ''');
+
+      // Copy data (location -> locationName)
+      await db.execute('''
+        INSERT INTO posts_new (id, title, mediaPaths, caption, locationName, latitude, longitude, tag, viewCount, likeCount, enableAiReactions, createdAt, updatedAt)
+        SELECT id, NULL, mediaPaths, caption, location, latitude, longitude, NULL, viewCount, likeCount, enableAiReactions, createdAt, updatedAt
+        FROM posts
+      ''');
+
+      // Drop old table and rename new one
+      await db.execute('DROP TABLE posts');
+      await db.execute('ALTER TABLE posts_new RENAME TO posts');
+
+      // Create tag_settings table for custom tag names
+      await db.execute('''
+        CREATE TABLE tag_settings (
+          tag TEXT PRIMARY KEY,
+          customName TEXT NOT NULL
+        )
+      ''');
+    }
+
+    if (oldVersion < 8) {
+      // Add postDate field
+      await db.execute('ALTER TABLE posts ADD COLUMN postDate TEXT');
+    }
   }
 
   Future<void> _createDB(Database db, int version) async {
@@ -80,11 +202,14 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
         mediaPaths TEXT NOT NULL,
         caption TEXT,
-        location TEXT,
+        locationName TEXT,
         latitude REAL,
         longitude REAL,
+        postDate TEXT,
+        tag TEXT,
         viewCount INTEGER DEFAULT 0,
         likeCount INTEGER DEFAULT 0,
         enableAiReactions INTEGER DEFAULT 1,
@@ -98,11 +223,11 @@ class DatabaseHelper {
       CREATE TABLE comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         postId INTEGER NOT NULL,
-        aiPersonaId INTEGER NOT NULL,
+        aiPersonaId INTEGER,
+        isUser INTEGER DEFAULT 0,
         content TEXT NOT NULL,
         createdAt TEXT NOT NULL,
-        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE,
-        FOREIGN KEY (aiPersonaId) REFERENCES ai_personas (id)
+        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
       )
     ''');
 
@@ -111,11 +236,10 @@ class DatabaseHelper {
       CREATE TABLE likes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         postId INTEGER NOT NULL,
-        aiPersonaId INTEGER NOT NULL,
+        aiPersonaId INTEGER,
+        isUser INTEGER DEFAULT 0,
         createdAt TEXT NOT NULL,
-        UNIQUE(postId, aiPersonaId),
-        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE,
-        FOREIGN KEY (aiPersonaId) REFERENCES ai_personas (id)
+        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
       )
     ''');
 
@@ -129,7 +253,7 @@ class DatabaseHelper {
         personality TEXT NOT NULL,
         systemPrompt TEXT NOT NULL,
         bio TEXT,
-        aiProvider INTEGER DEFAULT 0,
+        aiModel INTEGER DEFAULT 0,
         commentProbability REAL DEFAULT 0.5,
         likeProbability REAL DEFAULT 0.7
       )
@@ -144,6 +268,14 @@ class DatabaseHelper {
         content TEXT NOT NULL,
         createdAt TEXT NOT NULL,
         FOREIGN KEY (aiPersonaId) REFERENCES ai_personas (id)
+      )
+    ''');
+
+    // Tag settings table for custom tag names
+    await db.execute('''
+      CREATE TABLE tag_settings (
+        tag TEXT PRIMARY KEY,
+        customName TEXT NOT NULL
       )
     ''');
 
@@ -166,7 +298,12 @@ class DatabaseHelper {
       'posts',
       orderBy: 'createdAt DESC',
     );
-    return result.map((map) => Post.fromMap(map)).toList();
+    // Convert maps to Posts asynchronously
+    final posts = <Post>[];
+    for (final map in result) {
+      posts.add(await Post.fromMap(map));
+    }
+    return posts;
   }
 
   Future<Post?> getPost(int id) async {
@@ -177,7 +314,7 @@ class DatabaseHelper {
       whereArgs: [id],
     );
     if (result.isEmpty) return null;
-    return Post.fromMap(result.first);
+    return await Post.fromMap(result.first);
   }
 
   Future<int> updatePost(Post post) async {
@@ -191,6 +328,26 @@ class DatabaseHelper {
   }
 
   Future<int> deletePost(int id) async {
+    // First, get the post to access its media files
+    final post = await getPost(id);
+
+    // Delete media files from storage if post exists
+    if (post != null && post.mediaPaths.isNotEmpty) {
+      for (final mediaPath in post.mediaPaths) {
+        try {
+          final file = File(mediaPath);
+          if (await file.exists()) {
+            await file.delete();
+            print('🗑️ Deleted media file: $mediaPath');
+          }
+        } catch (e) {
+          print('⚠️ Failed to delete media file $mediaPath: $e');
+          // Continue even if file deletion fails
+        }
+      }
+    }
+
+    // Delete the post from database
     final db = await database;
     return await db.delete(
       'posts',
@@ -249,12 +406,26 @@ class DatabaseHelper {
     }
   }
 
-  Future<int> deleteLike(int postId, int aiPersonaId) async {
+  Future<int> deleteLike(int postId, {int? aiPersonaId, bool isUser = false}) async {
     final db = await database;
+
+    String where;
+    List<dynamic> whereArgs;
+
+    if (isUser) {
+      where = 'postId = ? AND isUser = 1';
+      whereArgs = [postId];
+    } else if (aiPersonaId != null) {
+      where = 'postId = ? AND aiPersonaId = ?';
+      whereArgs = [postId, aiPersonaId];
+    } else {
+      throw ArgumentError('Either aiPersonaId or isUser must be provided');
+    }
+
     final result = await db.delete(
       'likes',
-      where: 'postId = ? AND aiPersonaId = ?',
-      whereArgs: [postId, aiPersonaId],
+      where: where,
+      whereArgs: whereArgs,
     );
     if (result > 0) {
       // 좋아요 수 감소
@@ -352,6 +523,44 @@ class DatabaseHelper {
       'chat_messages',
       where: 'aiPersonaId = ?',
       whereArgs: [aiPersonaId],
+    );
+  }
+
+  // ========== Tag Settings ==========
+  Future<Map<String, String>> getAllTagSettings() async {
+    final db = await database;
+    final result = await db.query('tag_settings');
+    return Map.fromEntries(
+      result.map((row) => MapEntry(row['tag'] as String, row['customName'] as String)),
+    );
+  }
+
+  Future<String?> getTagCustomName(String tag) async {
+    final db = await database;
+    final result = await db.query(
+      'tag_settings',
+      where: 'tag = ?',
+      whereArgs: [tag],
+    );
+    if (result.isEmpty) return null;
+    return result.first['customName'] as String;
+  }
+
+  Future<void> setTagCustomName(String tag, String customName) async {
+    final db = await database;
+    await db.insert(
+      'tag_settings',
+      {'tag': tag, 'customName': customName},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteTagCustomName(String tag) async {
+    final db = await database;
+    await db.delete(
+      'tag_settings',
+      where: 'tag = ?',
+      whereArgs: [tag],
     );
   }
 

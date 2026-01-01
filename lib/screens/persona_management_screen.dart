@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/ai_persona.dart';
 import '../database/database_helper.dart';
+import '../widgets/avatar_widget.dart';
 import 'edit_persona_screen.dart';
 
 class PersonaManagementScreen extends StatefulWidget {
@@ -103,12 +104,9 @@ class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-                      child: Text(
-                        persona.avatar,
-                        style: const TextStyle(fontSize: 24),
-                      ),
+                    leading: CircleAvatarWidget(
+                      avatar: persona.avatar,
+                      radius: 20,
                     ),
                     title: Text(persona.name),
                     subtitle: Column(
@@ -116,35 +114,48 @@ class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
                       children: [
                         Text(persona.role),
                         const SizedBox(height: 4),
-                        Row(
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 4,
                           children: [
-                            Icon(
-                              persona.aiProvider == AiProvider.gemini
-                                  ? Icons.auto_awesome
-                                  : Icons.chat_bubble_outline,
-                              size: 14,
-                              color: Colors.grey,
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  persona.aiModel.isGemini
+                                      ? Icons.auto_awesome
+                                      : Icons.chat_bubble_outline,
+                                  size: 14,
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  persona.aiModel.displayName,
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              persona.aiProvider == AiProvider.gemini
-                                  ? 'Gemini'
-                                  : 'OpenAI',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.comment, size: 14, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${(persona.commentProbability * 100).toInt()}%',
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 12),
-                            const Icon(Icons.comment, size: 14, color: Colors.grey),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${(persona.commentProbability * 100).toInt()}%',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                            const SizedBox(width: 12),
-                            const Icon(Icons.favorite, size: 14, color: Colors.grey),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${(persona.likeProbability * 100).toInt()}%',
-                              style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.favorite, size: 14, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${(persona.likeProbability * 100).toInt()}%',
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
                             ),
                           ],
                         ),
