@@ -381,6 +381,16 @@ class DatabaseHelper {
     return result.map((map) => Comment.fromMap(map)).toList();
   }
 
+  Future<int> updateComment(Comment comment) async {
+    final db = await database;
+    return await db.update(
+      'comments',
+      comment.toMap(),
+      where: 'id = ?',
+      whereArgs: [comment.id],
+    );
+  }
+
   Future<int> deleteComment(int id) async {
     final db = await database;
     return await db.delete(

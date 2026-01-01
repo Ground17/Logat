@@ -9,8 +9,10 @@ import 'package:location/location.dart';
 import 'package:intl/intl.dart';
 import '../models/post.dart';
 import '../database/database_helper.dart';
+import '../services/ai_service.dart';
 import '../widgets/address_search_field.dart';
 import '../widgets/video_player_widget.dart';
+import '../widgets/video_thumbnail_widget.dart';
 import '../utils/tag_helper.dart';
 import 'location_picker_screen.dart';
 import '../key.dart';
@@ -34,7 +36,6 @@ class _EditPostScreenState extends State<EditPostScreen> {
 
   List<String> _mediaPaths = [];
   bool _isSaving = false;
-  bool _enableAiReactions = true;
   double? _latitude;
   double? _longitude;
   String? _selectedTag;
@@ -52,7 +53,6 @@ class _EditPostScreenState extends State<EditPostScreen> {
     _longitude = widget.post.longitude;
     _selectedTag = widget.post.tag;
     _postDate = widget.post.postDate;
-    _enableAiReactions = widget.post.enableAiReactions;
   }
 
   @override
@@ -397,6 +397,190 @@ class _EditPostScreenState extends State<EditPostScreen> {
     }
   }
 
+  /// Generate AI image from prompt
+  Future<void> _generateAiImage() async {
+    if (_mediaPaths.length >= maxMediaCount) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Maximum $maxMediaCount media files allowed')),
+        );
+      }
+      return;
+    }
+
+    final controller = TextEditingController();
+    final description = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Generate AI Image'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Describe the image you want to generate:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'e.g., A beautiful sunset over mountains',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Generate'),
+          ),
+        ],
+      ),
+    );
+
+    if (description != null && description.isNotEmpty) {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      try {
+        final imagePath = await AiService.generateAvatarImage(
+          description: description,
+        );
+
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+
+          if (imagePath != null) {
+            setState(() {
+              _mediaPaths.add(imagePath);
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('AI image generated successfully!'),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to generate image. Please try again.'),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          Navigator.pop(context); // Close loading dialog
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error generating image: $e'),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Show dialog for custom edit prompt
+  void _showEditPrompt(int imageIndex) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Image with AI'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Describe the edits you want to make:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'e.g., Make the background darker, add more contrast',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _editImageWithAI(imageIndex, controller.text);
+            },
+            child: const Text('Apply Edit'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Edit image using AI
+  Future<void> _editImageWithAI(int imageIndex, String editPrompt) async {
+    final imagePath = _mediaPaths[imageIndex];
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      final editedImagePath = await AiService.editAvatarImage(
+        imagePath: imagePath,
+        editPrompt: editPrompt,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+
+        if (editedImagePath != null) {
+          setState(() {
+            _mediaPaths[imageIndex] = editedImagePath;
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image edited successfully!'),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to edit image. Please try again.'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error editing image: $e'),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _savePost() async {
     // Validate: title is required if no media/location
     if (_mediaPaths.isEmpty &&
@@ -422,7 +606,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
         longitude: _longitude,
         tag: _selectedTag,
         postDate: _postDate,
-        enableAiReactions: _enableAiReactions,
+        // enableAiReactions는 수정하지 않음 - 기존 값 유지
         updatedAt: DateTime.now(),
       );
 
@@ -519,16 +703,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: isVideo
-                                    ? Container(
-                                        color: Colors.black,
-                                        child: const Center(
-                                          child: Icon(
-                                            Icons.play_circle_outline,
-                                            size: 40,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      )
+                                    ? VideoThumbnailWidget(videoPath: path)
                                     : Image.file(
                                         File(path),
                                         fit: BoxFit.cover,
@@ -537,6 +712,22 @@ class _EditPostScreenState extends State<EditPostScreen> {
                                       ),
                               ),
                             ),
+                            // Edit button for images only (top-right, before close button)
+                            if (!isVideo)
+                              Positioned(
+                                top: 4,
+                                right: 36,
+                                child: IconButton(
+                                  onPressed: () => _showEditPrompt(index),
+                                  icon: const Icon(Icons.auto_awesome, color: Colors.white),
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: Colors.black54,
+                                    padding: const EdgeInsets.all(4),
+                                    minimumSize: const Size(28, 28),
+                                  ),
+                                ),
+                              ),
+                            // Close button (top-right corner)
                             Positioned(
                               top: 4,
                               right: 4,
@@ -550,6 +741,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
                                 ),
                               ),
                             ),
+                            // Index indicator (bottom-left corner)
                             Positioned(
                               bottom: 4,
                               left: 4,
@@ -599,9 +791,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () => _pickMedia(ImageSource.gallery, isVideo: true),
-                          icon: const Icon(Icons.videocam),
-                          label: const Text('Video'),
+                          onPressed: _generateAiImage,
+                          icon: const Icon(Icons.auto_awesome),
+                          label: const Text('AI Image'),
                         ),
                       ),
                     ],
@@ -750,21 +942,6 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-
-                  // AI Reactions Toggle
-                  Card(
-                    child: SwitchListTile(
-                      value: _enableAiReactions,
-                      onChanged: (value) {
-                        setState(() => _enableAiReactions = value);
-                      },
-                      title: const Text('Enable AI Reactions'),
-                      subtitle: const Text(
-                        'Allow AI friends to like and comment on this post',
-                      ),
-                      secondary: const Icon(Icons.smart_toy),
-                    ),
-                  ),
                 ],
               ),
             ),

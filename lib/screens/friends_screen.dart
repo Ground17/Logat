@@ -35,7 +35,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Friends'),
+        title: const Text('Chat with AI Friends'),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -122,12 +122,6 @@ class PersonaCard extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-
-              // 채팅 아이콘
-              const Icon(
-                Icons.chat_bubble_outline,
-                color: Colors.grey,
               ),
             ],
           ),

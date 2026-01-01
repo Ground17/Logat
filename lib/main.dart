@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'screens/feed_screen.dart';
-import 'screens/setup_screen.dart';
+import 'screens/terms_agreement_screen.dart';
 import 'services/settings_service.dart';
 import 'utils/media_migration.dart';
 
 void main() {
-  runApp(const MyApp(isNotInit: false,));
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key, required bool isNotInit}) : super(key: key);
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +62,7 @@ class _SplashScreenState extends State<SplashScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (context) =>
-              isFirstTime ? const SetupScreen() : const FeedScreen(),
+              isFirstTime ? const TermsAgreementScreen() : const FeedScreen(),
         ),
       );
     }

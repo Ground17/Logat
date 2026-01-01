@@ -19,6 +19,7 @@ class _SetupScreenState extends State<SetupScreen> {
   List<AiPersona> _allPersonas = [];
   Set<int> _selectedPersonaIds = {1, 2, 3, 4, 5, 6};
   bool _isLoading = true;
+  bool _enableAiReactions = true;
 
   @override
   void initState() {
@@ -48,6 +49,7 @@ class _SetupScreenState extends State<SetupScreen> {
       likeProbability: 0.7,
       isFirstTime: false,
       userProfile: _userProfileController.text.trim(),
+      enableAiReactions: _enableAiReactions,
     );
 
     await SettingsService.saveSettings(settings);
@@ -103,6 +105,29 @@ class _SetupScreenState extends State<SetupScreen> {
                       prefixIcon: Icon(Icons.person),
                     ),
                     maxLines: 3,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // AI Reactions Default Setting
+                  const Text(
+                    'AI Reactions',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: CheckboxListTile(
+                      value: _enableAiReactions,
+                      onChanged: (value) {
+                        setState(() {
+                          _enableAiReactions = value ?? true;
+                        });
+                      },
+                      title: const Text('Enable AI reactions by default'),
+                      subtitle: const Text(
+                        'AI friends will like and comment on new posts by default',
+                      ),
+                      secondary: const Icon(Icons.smart_toy),
+                    ),
                   ),
                   const SizedBox(height: 24),
 

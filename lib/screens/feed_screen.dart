@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/post.dart';
 import '../database/database_helper.dart';
 import '../widgets/video_player_widget.dart';
@@ -18,7 +19,10 @@ class FeedScreen extends StatefulWidget {
 }
 
 enum ViewMode { list, map }
+
 enum SortOrder { dateDesc, dateAsc, viewCount }
+
+enum DateFilterType { postDate, createdAt, updatedAt }
 
 class _FeedScreenState extends State<FeedScreen> {
   final DatabaseHelper _db = DatabaseHelper.instance;
@@ -40,6 +44,9 @@ class _FeedScreenState extends State<FeedScreen> {
   // Sort order
   SortOrder _sortOrder = SortOrder.dateDesc;
 
+  // Date filter type
+  DateFilterType _dateFilterType = DateFilterType.postDate;
+
   // Search
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -47,13 +54,80 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void initState() {
     super.initState();
+    _loadFiltersFromPreferences();
     _loadPosts();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _saveFiltersToPreferences();
     super.dispose();
+  }
+
+  Future<void> _loadFiltersFromPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _searchQuery = prefs.getString('searchQuery') ?? '';
+        _searchController.text = _searchQuery;
+        _filterLikedPosts = prefs.getBool('filterLikedPosts') ?? false;
+        _filterSimilarDate = prefs.getBool('filterSimilarDate') ?? false;
+        _filterWithLocation = prefs.getBool('filterWithLocation') ?? false;
+        _filterWithMedia = prefs.getBool('filterWithMedia') ?? false;
+        _sortOrder = SortOrder
+            .values[prefs.getInt('sortOrder') ?? SortOrder.dateDesc.index];
+        _dateFilterType = DateFilterType.values[
+            prefs.getInt('dateFilterType') ?? DateFilterType.postDate.index];
+
+        // 저장된 태그 복원
+        final savedTags = prefs.getStringList('selectedTags');
+        if (savedTags != null) {
+          _selectedTags = savedTags.toSet();
+        }
+
+        // 저장된 날짜 범위 복원
+        final startDate = prefs.getString('dateRangeStart');
+        final endDate = prefs.getString('dateRangeEnd');
+        if (startDate != null) {
+          _dateRangeStart = DateTime.parse(startDate);
+        }
+        if (endDate != null) {
+          _dateRangeEnd = DateTime.parse(endDate);
+        }
+      });
+    } catch (e) {
+      print('필터 복원 중 오류: $e');
+    }
+  }
+
+  Future<void> _saveFiltersToPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('searchQuery', _searchQuery);
+      await prefs.setBool('filterLikedPosts', _filterLikedPosts);
+      await prefs.setBool('filterSimilarDate', _filterSimilarDate);
+      await prefs.setBool('filterWithLocation', _filterWithLocation);
+      await prefs.setBool('filterWithMedia', _filterWithMedia);
+      await prefs.setInt('sortOrder', _sortOrder.index);
+      await prefs.setInt('dateFilterType', _dateFilterType.index);
+      await prefs.setStringList('selectedTags', _selectedTags.toList());
+
+      // 날짜 범위 저장
+      if (_dateRangeStart != null) {
+        await prefs.setString(
+            'dateRangeStart', _dateRangeStart!.toIso8601String());
+      } else {
+        await prefs.remove('dateRangeStart');
+      }
+      if (_dateRangeEnd != null) {
+        await prefs.setString('dateRangeEnd', _dateRangeEnd!.toIso8601String());
+      } else {
+        await prefs.remove('dateRangeEnd');
+      }
+    } catch (e) {
+      print('필터 저장 중 오류: $e');
+    }
   }
 
   Future<void> _loadPosts() async {
@@ -86,7 +160,8 @@ class _FeedScreenState extends State<FeedScreen> {
           likedPostIds.add(post.id!);
         }
       }
-      filtered = filtered.where((post) => likedPostIds.contains(post.id)).toList();
+      filtered =
+          filtered.where((post) => likedPostIds.contains(post.id)).toList();
     }
 
     // Apply similar date filter (today ±7 days in other years)
@@ -95,7 +170,8 @@ class _FeedScreenState extends State<FeedScreen> {
       filtered = filtered.where((post) {
         final postDate = post.postDate ?? post.createdAt;
         // Check if the post is within ±7 days of today's month/day in any year
-        final daysDiff = (postDate.month - now.month).abs() * 30 + (postDate.day - now.day).abs();
+        final daysDiff = (postDate.month - now.month).abs() * 30 +
+            (postDate.day - now.day).abs();
         return daysDiff <= 7 && postDate.year != now.year;
       }).toList();
     }
@@ -109,9 +185,9 @@ class _FeedScreenState extends State<FeedScreen> {
 
     // Apply location filter
     if (_filterWithLocation) {
-      filtered = filtered.where((post) =>
-        post.latitude != null && post.longitude != null
-      ).toList();
+      filtered = filtered
+          .where((post) => post.latitude != null && post.longitude != null)
+          .toList();
     }
 
     // Apply media filter
@@ -122,9 +198,20 @@ class _FeedScreenState extends State<FeedScreen> {
     // Apply date range filter
     if (_dateRangeStart != null && _dateRangeEnd != null) {
       filtered = filtered.where((post) {
-        final postDate = post.postDate ?? post.createdAt;
-        return postDate.isAfter(_dateRangeStart!) &&
-               postDate.isBefore(_dateRangeEnd!.add(const Duration(days: 1)));
+        DateTime dateToCheck;
+        switch (_dateFilterType) {
+          case DateFilterType.postDate:
+            dateToCheck = post.postDate ?? post.createdAt;
+            break;
+          case DateFilterType.createdAt:
+            dateToCheck = post.createdAt;
+            break;
+          case DateFilterType.updatedAt:
+            dateToCheck = post.updatedAt ?? post.createdAt;
+            break;
+        }
+        return dateToCheck.isAfter(_dateRangeStart!) &&
+            dateToCheck.isBefore(_dateRangeEnd!.add(const Duration(days: 1)));
       }).toList();
     }
 
@@ -132,15 +219,43 @@ class _FeedScreenState extends State<FeedScreen> {
     switch (_sortOrder) {
       case SortOrder.dateDesc:
         filtered.sort((a, b) {
-          final aDate = a.postDate ?? a.createdAt;
-          final bDate = b.postDate ?? b.createdAt;
+          DateTime aDate;
+          DateTime bDate;
+          switch (_dateFilterType) {
+            case DateFilterType.postDate:
+              aDate = a.postDate ?? a.createdAt;
+              bDate = b.postDate ?? b.createdAt;
+              break;
+            case DateFilterType.createdAt:
+              aDate = a.createdAt;
+              bDate = b.createdAt;
+              break;
+            case DateFilterType.updatedAt:
+              aDate = a.updatedAt ?? a.createdAt;
+              bDate = b.updatedAt ?? b.createdAt;
+              break;
+          }
           return bDate.compareTo(aDate);
         });
         break;
       case SortOrder.dateAsc:
         filtered.sort((a, b) {
-          final aDate = a.postDate ?? a.createdAt;
-          final bDate = b.postDate ?? b.createdAt;
+          DateTime aDate;
+          DateTime bDate;
+          switch (_dateFilterType) {
+            case DateFilterType.postDate:
+              aDate = a.postDate ?? a.createdAt;
+              bDate = b.postDate ?? b.createdAt;
+              break;
+            case DateFilterType.createdAt:
+              aDate = a.createdAt;
+              bDate = b.createdAt;
+              break;
+            case DateFilterType.updatedAt:
+              aDate = a.updatedAt ?? a.createdAt;
+              bDate = b.updatedAt ?? b.createdAt;
+              break;
+          }
           return aDate.compareTo(bDate);
         });
         break;
@@ -155,6 +270,21 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _showFilterDialog() {
+    // 임시 변수로 현재 필터 설정값 복사
+    String tempSearchQuery = _searchQuery;
+    bool tempFilterLikedPosts = _filterLikedPosts;
+    bool tempFilterSimilarDate = _filterSimilarDate;
+    Set<String> tempSelectedTags = Set.from(_selectedTags);
+    bool tempFilterWithLocation = _filterWithLocation;
+    bool tempFilterWithMedia = _filterWithMedia;
+    DateTime? tempDateRangeStart = _dateRangeStart;
+    DateTime? tempDateRangeEnd = _dateRangeEnd;
+    DateFilterType tempDateFilterType = _dateFilterType;
+    SortOrder tempSortOrder = _sortOrder;
+
+    final tempSearchController = TextEditingController(text: _searchQuery);
+    bool isControllerDisposed = false;
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -167,7 +297,7 @@ class _FeedScreenState extends State<FeedScreen> {
               children: [
                 // Search
                 TextField(
-                  controller: _searchController,
+                  controller: tempSearchController,
                   decoration: const InputDecoration(
                     labelText: 'Search by title',
                     prefixIcon: Icon(Icons.search),
@@ -175,22 +305,23 @@ class _FeedScreenState extends State<FeedScreen> {
                   ),
                   onChanged: (value) {
                     setDialogState(() {
-                      _searchQuery = value;
+                      tempSearchQuery = value;
                     });
                   },
                 ),
                 const SizedBox(height: 16),
-                const Text('Filters (AND conditions):', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Filters (AND conditions):',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
 
                 // Liked posts filter
                 CheckboxListTile(
                   dense: true,
                   title: const Text('Liked posts'),
-                  value: _filterLikedPosts,
+                  value: tempFilterLikedPosts,
                   onChanged: (value) {
                     setDialogState(() {
-                      _filterLikedPosts = value ?? false;
+                      tempFilterLikedPosts = value ?? false;
                     });
                   },
                 ),
@@ -199,10 +330,10 @@ class _FeedScreenState extends State<FeedScreen> {
                 CheckboxListTile(
                   dense: true,
                   title: const Text('Similar date (±7 days, other years)'),
-                  value: _filterSimilarDate,
+                  value: tempFilterSimilarDate,
                   onChanged: (value) {
                     setDialogState(() {
-                      _filterSimilarDate = value ?? false;
+                      tempFilterSimilarDate = value ?? false;
                     });
                   },
                 ),
@@ -211,10 +342,10 @@ class _FeedScreenState extends State<FeedScreen> {
                 CheckboxListTile(
                   dense: true,
                   title: const Text('Has location'),
-                  value: _filterWithLocation,
+                  value: tempFilterWithLocation,
                   onChanged: (value) {
                     setDialogState(() {
-                      _filterWithLocation = value ?? false;
+                      tempFilterWithLocation = value ?? false;
                     });
                   },
                 ),
@@ -223,31 +354,83 @@ class _FeedScreenState extends State<FeedScreen> {
                 CheckboxListTile(
                   dense: true,
                   title: const Text('Has photo/video'),
-                  value: _filterWithMedia,
+                  value: tempFilterWithMedia,
                   onChanged: (value) {
                     setDialogState(() {
-                      _filterWithMedia = value ?? false;
+                      tempFilterWithMedia = value ?? false;
                     });
                   },
                 ),
 
                 const SizedBox(height: 8),
-                const Text('Tags:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                const Text('Tags:',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 const SizedBox(height: 4),
                 Wrap(
                   spacing: 8,
                   children: [
-                    _buildTagChip('red', Colors.red, setDialogState),
-                    _buildTagChip('orange', Colors.orange, setDialogState),
-                    _buildTagChip('yellow', Colors.yellow, setDialogState),
-                    _buildTagChip('green', Colors.green, setDialogState),
-                    _buildTagChip('blue', Colors.blue, setDialogState),
-                    _buildTagChip('purple', Colors.purple, setDialogState),
+                    _buildTagChip(
+                        'red', Colors.red, tempSelectedTags, setDialogState),
+                    _buildTagChip('orange', Colors.orange, tempSelectedTags,
+                        setDialogState),
+                    _buildTagChip('yellow', Colors.yellow, tempSelectedTags,
+                        setDialogState),
+                    _buildTagChip('green', Colors.green, tempSelectedTags,
+                        setDialogState),
+                    _buildTagChip(
+                        'blue', Colors.blue, tempSelectedTags, setDialogState),
+                    _buildTagChip('purple', Colors.purple, tempSelectedTags,
+                        setDialogState),
                   ],
                 ),
 
                 const SizedBox(height: 12),
-                const Text('Date Range:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                // Date Filter Type Selection
+                const Text('Date Filter Type:',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                Column(
+                  children: [
+                    RadioListTile<DateFilterType>(
+                      dense: true,
+                      title: const Text('Post Date'),
+                      value: DateFilterType.postDate,
+                      groupValue: tempDateFilterType,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          tempDateFilterType = value!;
+                        });
+                      },
+                    ),
+                    RadioListTile<DateFilterType>(
+                      dense: true,
+                      title: const Text('Created Date'),
+                      value: DateFilterType.createdAt,
+                      groupValue: tempDateFilterType,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          tempDateFilterType = value!;
+                        });
+                      },
+                    ),
+                    RadioListTile<DateFilterType>(
+                      dense: true,
+                      title: const Text('Updated Date'),
+                      value: DateFilterType.updatedAt,
+                      groupValue: tempDateFilterType,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          tempDateFilterType = value!;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text('Date Range:',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -256,20 +439,20 @@ class _FeedScreenState extends State<FeedScreen> {
                         onPressed: () async {
                           final picked = await showDatePicker(
                             context: context,
-                            initialDate: _dateRangeStart ?? DateTime.now(),
+                            initialDate: tempDateRangeStart ?? DateTime.now(),
                             firstDate: DateTime(2000),
                             lastDate: DateTime.now(),
                           );
                           if (picked != null) {
                             setDialogState(() {
-                              _dateRangeStart = picked;
+                              tempDateRangeStart = picked;
                             });
                           }
                         },
                         icon: const Icon(Icons.calendar_today, size: 16),
                         label: Text(
-                          _dateRangeStart != null
-                              ? '${_dateRangeStart!.year}-${_dateRangeStart!.month.toString().padLeft(2, '0')}-${_dateRangeStart!.day.toString().padLeft(2, '0')}'
+                          tempDateRangeStart != null
+                              ? '${tempDateRangeStart!.year}-${tempDateRangeStart!.month.toString().padLeft(2, '0')}-${tempDateRangeStart!.day.toString().padLeft(2, '0')}'
                               : 'Start',
                           style: const TextStyle(fontSize: 12),
                         ),
@@ -281,20 +464,20 @@ class _FeedScreenState extends State<FeedScreen> {
                         onPressed: () async {
                           final picked = await showDatePicker(
                             context: context,
-                            initialDate: _dateRangeEnd ?? DateTime.now(),
-                            firstDate: _dateRangeStart ?? DateTime(2000),
+                            initialDate: tempDateRangeEnd ?? DateTime.now(),
+                            firstDate: tempDateRangeStart ?? DateTime(2000),
                             lastDate: DateTime.now(),
                           );
                           if (picked != null) {
                             setDialogState(() {
-                              _dateRangeEnd = picked;
+                              tempDateRangeEnd = picked;
                             });
                           }
                         },
                         icon: const Icon(Icons.calendar_today, size: 16),
                         label: Text(
-                          _dateRangeEnd != null
-                              ? '${_dateRangeEnd!.year}-${_dateRangeEnd!.month.toString().padLeft(2, '0')}-${_dateRangeEnd!.day.toString().padLeft(2, '0')}'
+                          tempDateRangeEnd != null
+                              ? '${tempDateRangeEnd!.year}-${tempDateRangeEnd!.month.toString().padLeft(2, '0')}-${tempDateRangeEnd!.day.toString().padLeft(2, '0')}'
                               : 'End',
                           style: const TextStyle(fontSize: 12),
                         ),
@@ -302,28 +485,30 @@ class _FeedScreenState extends State<FeedScreen> {
                     ),
                   ],
                 ),
-                if (_dateRangeStart != null || _dateRangeEnd != null)
+                if (tempDateRangeStart != null || tempDateRangeEnd != null)
                   TextButton.icon(
                     onPressed: () {
                       setDialogState(() {
-                        _dateRangeStart = null;
-                        _dateRangeEnd = null;
+                        tempDateRangeStart = null;
+                        tempDateRangeEnd = null;
                       });
                     },
                     icon: const Icon(Icons.clear, size: 16),
-                    label: const Text('Clear dates', style: TextStyle(fontSize: 12)),
+                    label: const Text('Clear dates',
+                        style: TextStyle(fontSize: 12)),
                   ),
 
                 const SizedBox(height: 12),
-                const Text('Sort by:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Sort by:',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
                 RadioListTile<SortOrder>(
                   dense: true,
                   title: const Text('Date (newest first)'),
                   value: SortOrder.dateDesc,
-                  groupValue: _sortOrder,
+                  groupValue: tempSortOrder,
                   onChanged: (value) {
                     setDialogState(() {
-                      _sortOrder = value!;
+                      tempSortOrder = value!;
                     });
                   },
                 ),
@@ -331,10 +516,10 @@ class _FeedScreenState extends State<FeedScreen> {
                   dense: true,
                   title: const Text('Date (oldest first)'),
                   value: SortOrder.dateAsc,
-                  groupValue: _sortOrder,
+                  groupValue: tempSortOrder,
                   onChanged: (value) {
                     setDialogState(() {
-                      _sortOrder = value!;
+                      tempSortOrder = value!;
                     });
                   },
                 ),
@@ -342,10 +527,10 @@ class _FeedScreenState extends State<FeedScreen> {
                   dense: true,
                   title: const Text('View count'),
                   value: SortOrder.viewCount,
-                  groupValue: _sortOrder,
+                  groupValue: tempSortOrder,
                   onChanged: (value) {
                     setDialogState(() {
-                      _sortOrder = value!;
+                      tempSortOrder = value!;
                     });
                   },
                 ),
@@ -356,32 +541,53 @@ class _FeedScreenState extends State<FeedScreen> {
             TextButton(
               onPressed: () {
                 setDialogState(() {
-                  _searchQuery = '';
-                  _searchController.clear();
-                  _filterLikedPosts = false;
-                  _filterSimilarDate = false;
-                  _selectedTags.clear();
-                  _filterWithLocation = false;
-                  _filterWithMedia = false;
-                  _dateRangeStart = null;
-                  _dateRangeEnd = null;
-                  _sortOrder = SortOrder.dateDesc;
-                });
-                setState(() {
-                  _applyFiltersAndSort();
+                  tempSearchQuery = '';
+                  tempSearchController.clear();
+                  tempFilterLikedPosts = false;
+                  tempFilterSimilarDate = false;
+                  tempSelectedTags.clear();
+                  tempFilterWithLocation = false;
+                  tempFilterWithMedia = false;
+                  tempDateRangeStart = null;
+                  tempDateRangeEnd = null;
+                  tempDateFilterType = DateFilterType.postDate;
+                  tempSortOrder = SortOrder.dateDesc;
                 });
               },
               child: const Text('Reset'),
             ),
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                if (!isControllerDisposed) {
+                  tempSearchController.dispose();
+                  isControllerDisposed = true;
+                }
+                Navigator.pop(context);
+              },
               child: const Text('Cancel'),
             ),
             FilledButton(
               onPressed: () {
+                // Apply 버튼을 눌렀을 때만 실제 상태에 반영
                 setState(() {
+                  _searchQuery = tempSearchQuery;
+                  _searchController.text = tempSearchQuery;
+                  _filterLikedPosts = tempFilterLikedPosts;
+                  _filterSimilarDate = tempFilterSimilarDate;
+                  _selectedTags = Set.from(tempSelectedTags);
+                  _filterWithLocation = tempFilterWithLocation;
+                  _filterWithMedia = tempFilterWithMedia;
+                  _dateRangeStart = tempDateRangeStart;
+                  _dateRangeEnd = tempDateRangeEnd;
+                  _dateFilterType = tempDateFilterType;
+                  _sortOrder = tempSortOrder;
                   _applyFiltersAndSort();
                 });
+                _saveFiltersToPreferences();
+                if (!isControllerDisposed) {
+                  tempSearchController.dispose();
+                  isControllerDisposed = true;
+                }
                 Navigator.pop(context);
               },
               child: const Text('Apply'),
@@ -389,11 +595,17 @@ class _FeedScreenState extends State<FeedScreen> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      // 다이얼로그가 닫힐 때 tempSearchController가 dispose되지 않았다면 dispose
+      if (!isControllerDisposed) {
+        tempSearchController.dispose();
+      }
+    });
   }
 
-  Widget _buildTagChip(String tag, Color color, StateSetter setDialogState) {
-    final isSelected = _selectedTags.contains(tag);
+  Widget _buildTagChip(String tag, Color color, Set<String> selectedTags,
+      StateSetter setDialogState) {
+    final isSelected = selectedTags.contains(tag);
     return FilterChip(
       label: Text(tag, style: const TextStyle(fontSize: 12)),
       selected: isSelected,
@@ -404,9 +616,9 @@ class _FeedScreenState extends State<FeedScreen> {
       onSelected: (selected) {
         setDialogState(() {
           if (selected) {
-            _selectedTags.add(tag);
+            selectedTags.add(tag);
           } else {
-            _selectedTags.remove(tag);
+            selectedTags.remove(tag);
           }
         });
       },
@@ -415,161 +627,195 @@ class _FeedScreenState extends State<FeedScreen> {
 
   bool _hasActiveFilters() {
     return _searchQuery.isNotEmpty ||
-           _filterLikedPosts ||
-           _filterSimilarDate ||
-           _selectedTags.isNotEmpty ||
-           _filterWithLocation ||
-           _filterWithMedia ||
-           _dateRangeStart != null ||
-           _dateRangeEnd != null ||
-           _sortOrder != SortOrder.dateDesc;
+        _filterLikedPosts ||
+        _filterSimilarDate ||
+        _selectedTags.isNotEmpty ||
+        _filterWithLocation ||
+        _filterWithMedia ||
+        _dateRangeStart != null ||
+        _dateRangeEnd != null ||
+        _sortOrder != SortOrder.dateDesc;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Logat'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _viewMode == ViewMode.list ? Icons.map : Icons.list,
+        appBar: AppBar(
+          title: const Text('Logat'),
+          actions: [
+            IconButton(
+              icon: Icon(
+                Icons.filter_list,
+                color: _hasActiveFilters() ? Colors.blue : null,
+              ),
+              onPressed: _showFilterDialog,
             ),
-            onPressed: () {
-              setState(() {
-                _viewMode = _viewMode == ViewMode.list ? ViewMode.map : ViewMode.list;
-              });
-            },
-            tooltip: _viewMode == ViewMode.list ? 'Map View' : 'List View',
-          ),
-          IconButton(
-            icon: Icon(
-              Icons.filter_list,
-              color: _hasActiveFilters() ? Colors.blue : null,
+            IconButton(
+              icon: const Icon(Icons.notifications),
+              onPressed: () {
+                // TODO: Implement notifications screen and functionality
+              },
             ),
-            onPressed: _showFilterDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.people),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const FriendsScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              );
-              _loadPosts();
-            },
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _posts.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.photo_library, size: 64, color: Colors.grey),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Share your first post!',
-                        style: TextStyle(fontSize: 18, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Your AI friends will react to it',
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                )
-              : _viewMode == ViewMode.list
-                  ? RefreshIndicator(
-                      onRefresh: _loadPosts,
-                      child: ListView.builder(
-                        itemCount: _posts.length,
-                        itemBuilder: (context, index) {
-                          return PostCard(
-                            post: _posts[index],
-                            onTap: () async {
-                              final result = await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => PostDetailScreen(
-                                    post: _posts[index],
-                                  ),
-                                ),
-                              );
-                              // Reload if post was edited or deleted
-                              if (result == true) {
-                                _loadPosts();
-                              }
-                            },
-                          );
-                        },
-                      ),
-                    )
-                  : MapView(
-                      key: _mapViewKey,
-                      posts: _posts.where((p) => p.latitude != null && p.longitude != null).toList(),
-                      onPostTap: (post) async {
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => PostDetailScreen(post: post),
-                          ),
-                        );
-                        if (result == true) {
-                          _loadPosts();
-                        }
-                      },
-                    ),
-      floatingActionButton: _viewMode == ViewMode.map
-          ? Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                FloatingActionButton(
-                  heroTag: 'myLocation',
-                  onPressed: () {
-                    // Get the current MapView state and move to my location
-                    // This will be handled by calling the map controller
-                    _moveToMyLocation();
-                  },
-                  child: const Icon(Icons.my_location),
-                ),
-                const SizedBox(width: 16),
-                FloatingActionButton(
-                  heroTag: 'addPost',
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const CreatePostScreen()),
-                    );
-                    _loadPosts();
-                  },
-                  child: const Icon(Icons.add),
-                ),
-              ],
-            )
-          : FloatingActionButton(
+            IconButton(
+              icon: const Icon(Icons.chat_bubble_outline),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const FriendsScreen()),
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
               onPressed: () async {
                 await Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const CreatePostScreen()),
+                  MaterialPageRoute(
+                      builder: (context) => const SettingsScreen()),
                 );
                 _loadPosts();
               },
-              child: const Icon(Icons.add),
             ),
-    );
+          ],
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _posts.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.photo_library,
+                            size: 64, color: Colors.grey),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Share your first post!',
+                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Your AI friends will react to it',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  )
+                : _viewMode == ViewMode.list
+                    ? RefreshIndicator(
+                        onRefresh: _loadPosts,
+                        child: ListView.builder(
+                          itemCount: _posts.length,
+                          itemBuilder: (context, index) {
+                            return PostCard(
+                              post: _posts[index],
+                              onTap: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => PostDetailScreen(
+                                      post: _posts[index],
+                                    ),
+                                  ),
+                                );
+                                // Always reload to reflect view count and other changes
+                                _loadPosts();
+                              },
+                            );
+                          },
+                        ),
+                      )
+                    : MapView(
+                        key: _mapViewKey,
+                        posts: _posts
+                            .where((p) =>
+                                p.latitude != null && p.longitude != null)
+                            .toList(),
+                        onPostTap: (post) async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  PostDetailScreen(post: post),
+                            ),
+                          );
+                          // Always reload to reflect view count and other changes
+                          _loadPosts();
+                        },
+                      ),
+        floatingActionButton: _viewMode == ViewMode.map
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  FloatingActionButton(
+                    heroTag: 'myLocation',
+                    onPressed: () {
+                      // Get the current MapView state and move to my location
+                      // This will be handled by calling the map controller
+                      _moveToMyLocation();
+                    },
+                    child: const Icon(Icons.my_location),
+                  ),
+                  const SizedBox(width: 16),
+                  FloatingActionButton(
+                    heroTag: 'viewModeToggle',
+                    onPressed: () {
+                      setState(() {
+                        _viewMode = _viewMode == ViewMode.list
+                            ? ViewMode.map
+                            : ViewMode.list;
+                      });
+                    },
+                    child: Icon(
+                      _viewMode == ViewMode.list ? Icons.map : Icons.list,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  FloatingActionButton(
+                    heroTag: 'addPost',
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const CreatePostScreen()),
+                      );
+                      _loadPosts();
+                    },
+                    child: const Icon(Icons.add),
+                  ),
+                ],
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  FloatingActionButton(
+                    heroTag: 'viewModeToggle',
+                    onPressed: () {
+                      setState(() {
+                        _viewMode = _viewMode == ViewMode.list
+                            ? ViewMode.map
+                            : ViewMode.list;
+                      });
+                    },
+                    child: Icon(
+                      _viewMode == ViewMode.list ? Icons.map : Icons.list,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  FloatingActionButton(
+                    heroTag: 'addPost',
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const CreatePostScreen()),
+                      );
+                      _loadPosts();
+                    },
+                    child: const Icon(Icons.add),
+                  ),
+                ],
+              ));
   }
 
   void _moveToMyLocation() async {
@@ -583,7 +829,7 @@ class _FeedScreenState extends State<FeedScreen> {
           mapController.animateCamera(
             CameraUpdate.newLatLngZoom(
               LatLng(location.latitude!, location.longitude!),
-              15,
+              12,
             ),
           );
         }
@@ -624,7 +870,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 }
 
-class PostCard extends StatelessWidget {
+class PostCard extends StatefulWidget {
   final Post post;
   final VoidCallback onTap;
 
@@ -635,115 +881,185 @@ class PostCard extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<PostCard> createState() => _PostCardState();
+}
+
+class _PostCardState extends State<PostCard> {
+  int _currentMediaIndex = 0;
+
+  @override
   Widget build(BuildContext context) {
-    final firstMediaPath = post.mediaPaths.isNotEmpty ? post.mediaPaths.first : '';
-    final isVideo = firstMediaPath.toLowerCase().endsWith('.mp4') ||
-        firstMediaPath.toLowerCase().endsWith('.mov');
-
-    // Debug: Check file existence
-    final fileExists = File(firstMediaPath).existsSync();
-    print('🖼️ Feed PostCard - Path: $firstMediaPath');
-    print('🖼️ Feed PostCard - File exists: $fileExists');
-
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Main media with indicator
-            Stack(
-              children: [
-                if (fileExists)
-                  AspectRatio(
-                    aspectRatio: 1,
-                    child: fileExists && isVideo
-                        ? VideoPlayerWidget(videoPath: firstMediaPath)
-                        : Image.file(
-                          File(firstMediaPath),
-                          fit: BoxFit.cover,
-                        ),
-                  ),
-                if (post.mediaPaths.length > 1)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.collections,
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${post.mediaPaths.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
+            // Media PageView (only show if media exists)
+            if (widget.post.mediaPaths.isNotEmpty)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  // 이미지나 동영상을 탭하면 post_detail_screen으로 이동
+                  widget.onTap();
+                },
+                child: Stack(
+                  children: [
+                    AspectRatio(
+                      aspectRatio: 1,
+                      child: PageView.builder(
+                        itemCount: widget.post.mediaPaths.length,
+                        onPageChanged: (index) {
+                          setState(() {
+                            _currentMediaIndex = index;
+                          });
+                        },
+                        itemBuilder: (context, index) {
+                          final mediaPath = widget.post.mediaPaths[index];
+                          final isVideo =
+                              mediaPath.toLowerCase().endsWith('.mp4') ||
+                                  mediaPath.toLowerCase().endsWith('.mov');
+                          final fileExists = File(mediaPath).existsSync();
+
+                          if (!fileExists) {
+                            return Container(
+                              color: Colors.grey[300],
+                              child: const Center(
+                                child: Icon(Icons.broken_image,
+                                    size: 64, color: Colors.grey),
+                              ),
+                            );
+                          }
+
+                          return isVideo
+                              ? VideoPlayerWidget(videoPath: mediaPath)
+                              : Image.file(
+                                  File(mediaPath),
+                                  fit: BoxFit.cover,
+                                );
+                        },
                       ),
                     ),
-                  ),
-              ],
-            ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${_currentMediaIndex + 1}/${widget.post.mediaPaths.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Page indicator dots
+                    if (widget.post.mediaPaths.length > 1)
+                      Positioned(
+                        bottom: 8,
+                        left: 0,
+                        right: 0,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(
+                            widget.post.mediaPaths.length,
+                            (index) => Container(
+                              width: 6,
+                              height: 6,
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _currentMediaIndex == index
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.4),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (widget.post.title != null &&
+                      widget.post.title!.isNotEmpty) ...[
+                    Text(
+                      widget.post.title!,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Row(
                     children: [
-                      const Icon(Icons.favorite, size: 20, color: Colors.red),
+                      FutureBuilder<bool>(
+                        future: DatabaseHelper.instance
+                            .getLikesByPost(widget.post.id!)
+                            .then((likes) => likes.any((like) => like.isUser)),
+                        builder: (context, snapshot) {
+                          final isLiked = snapshot.data ?? false;
+                          return Icon(
+                            isLiked ? Icons.favorite : Icons.favorite_border,
+                            size: 20,
+                            color: isLiked ? Colors.red : Colors.grey,
+                          );
+                        },
+                      ),
                       const SizedBox(width: 4),
-                      Text('${post.likeCount}'),
+                      Text('${widget.post.likeCount}'),
                       const SizedBox(width: 16),
                       const Icon(Icons.chat_bubble_outline, size: 20),
                       const SizedBox(width: 4),
                       FutureBuilder<int>(
                         future: DatabaseHelper.instance
-                            .getCommentsByPost(post.id!)
+                            .getCommentsByPost(widget.post.id!)
                             .then((comments) => comments.length),
                         builder: (context, snapshot) {
                           return Text('${snapshot.data ?? 0}');
                         },
                       ),
                       const SizedBox(width: 16),
-                      const Icon(Icons.visibility, size: 20, color: Colors.grey),
+                      const Icon(Icons.visibility,
+                          size: 20, color: Colors.grey),
                       const SizedBox(width: 4),
-                      Text('${post.viewCount}'),
+                      Text('${widget.post.viewCount}'),
                     ],
                   ),
-                  if (post.caption != null) ...[
+                  if (widget.post.caption != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      post.caption!,
+                      widget.post.caption!,
                       style: const TextStyle(fontSize: 14),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
-                  if (post.locationName != null) ...[
+                  if (widget.post.locationName != null) ...[
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        const Icon(Icons.location_on, size: 14, color: Colors.grey),
+                        const Icon(Icons.location_on,
+                            size: 14, color: Colors.grey),
                         const SizedBox(width: 4),
                         Text(
-                          post.locationName!,
+                          widget.post.locationName!,
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.grey,
@@ -754,7 +1070,7 @@ class PostCard extends StatelessWidget {
                   ],
                   const SizedBox(height: 4),
                   Text(
-                    _formatDate(post.createdAt),
+                    _formatDate(widget.post.createdAt),
                     style: const TextStyle(
                       fontSize: 12,
                       color: Colors.grey,
@@ -842,6 +1158,9 @@ class _MapViewState extends State<MapView> {
   }
 
   LatLngBounds _calculateBounds() {
+    // 지구 반지름 기준 거리: 약 6,371km / 111km per degree ≈ 57도
+    const double earthRadiusThreshold = 57;
+
     double minLat = widget.posts.first.latitude!;
     double maxLat = widget.posts.first.latitude!;
     double minLng = widget.posts.first.longitude!;
@@ -852,6 +1171,23 @@ class _MapViewState extends State<MapView> {
       if (post.latitude! > maxLat) maxLat = post.latitude!;
       if (post.longitude! < minLng) minLng = post.longitude!;
       if (post.longitude! > maxLng) maxLng = post.longitude!;
+
+      // 범위가 지구 반지름 이상이면 바로 첫 번째 게시물 기준으로 반환
+      final latDiff = maxLat - minLat;
+      final lngDiff = maxLng - minLng;
+      if (latDiff > earthRadiusThreshold || lngDiff > earthRadiusThreshold) {
+        final padding = 0.05; // 약 5km
+        return LatLngBounds(
+          southwest: LatLng(
+            widget.posts.first.latitude! - padding,
+            widget.posts.first.longitude! - padding,
+          ),
+          northeast: LatLng(
+            widget.posts.first.latitude! + padding,
+            widget.posts.first.longitude! + padding,
+          ),
+        );
+      }
     }
 
     return LatLngBounds(

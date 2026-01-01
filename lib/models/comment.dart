@@ -36,4 +36,22 @@ class Comment {
       createdAt: DateTime.parse(map['createdAt'] as String),
     );
   }
+
+  Comment copyWith({
+    int? id,
+    int? postId,
+    int? aiPersonaId,
+    bool? isUser,
+    String? content,
+    DateTime? createdAt,
+  }) {
+    return Comment(
+      id: id ?? this.id,
+      postId: postId ?? this.postId,
+      aiPersonaId: aiPersonaId ?? this.aiPersonaId,
+      isUser: isUser ?? this.isUser,
+      content: content ?? this.content,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 }

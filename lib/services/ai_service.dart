@@ -50,15 +50,19 @@ Keep the comment brief (1-2 sentences) and let ${persona.name}'s unique characte
     );
   }
 
-  /// Extract thumbnail from video
+  /// Extract thumbnail from video (middle frame)
   static Future<String?> _extractVideoThumbnail(String videoPath) async {
     try {
+      // Note: VideoThumbnail package extracts from middle of video by default when timeMs is not specified
+      // According to the package documentation, if timeMs is null, it defaults to middle frame
+      // So we simply don't specify timeMs and let it use the default middle frame behavior
       final thumbnailPath = await VideoThumbnail.thumbnailFile(
         video: videoPath,
         thumbnailPath: (await getTemporaryDirectory()).path,
         imageFormat: ImageFormat.JPEG,
         maxWidth: 512,
         quality: 75,
+        // timeMs not specified = defaults to middle of video
       );
       return thumbnailPath;
     } catch (e) {
@@ -445,25 +449,27 @@ Answer only "yes" or "no".''';
   }
 
   /// Save base64 encoded image to local storage
+  /// Returns only the filename (not the full path)
   static Future<String?> _saveBase64Image(String base64Image, String mimeType) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      
+
       String extension = 'png';
       if (mimeType.contains('jpeg') || mimeType.contains('jpg')) {
         extension = 'jpg';
       } else if (mimeType.contains('webp')) {
         extension = 'webp';
       }
-      
+
       final fileName = 'avatar_$timestamp.$extension';
       final file = File('${appDir.path}/$fileName');
-      
+
       final imageBytes = base64Decode(base64Image);
       await file.writeAsBytes(imageBytes);
-      
-      return file.path;
+
+      // Return only the filename, not the full path
+      return fileName;
     } catch (e) {
       print('Failed to save base64 image: $e');
     }

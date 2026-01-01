@@ -176,65 +176,78 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Media gallery
-                  SizedBox(
-                    height: 400,
-                    child: PageView.builder(
-                      itemCount: _post.mediaPaths.length,
-                      itemBuilder: (context, index) {
-                        final mediaPath = _post.mediaPaths[index];
-                        final isVideo = mediaPath.toLowerCase().endsWith('.mp4') ||
-                            mediaPath.toLowerCase().endsWith('.mov');
+                  // Media gallery (only show if media exists)
+                  if (_post.mediaPaths.isNotEmpty)
+                    SizedBox(
+                      height: 400,
+                      child: PageView.builder(
+                        itemCount: _post.mediaPaths.length,
+                        itemBuilder: (context, index) {
+                          final mediaPath = _post.mediaPaths[index];
+                          final isVideo = mediaPath.toLowerCase().endsWith('.mp4') ||
+                              mediaPath.toLowerCase().endsWith('.mov');
 
-                        return Stack(
-                          children: [
-                            isVideo
-                                ? VideoPlayerWidget(videoPath: mediaPath)
-                                : File(mediaPath).existsSync()
-                                    ? Image.file(
-                                        File(mediaPath),
-                                        fit: BoxFit.cover,
-                                        width: double.infinity,
-                                      )
-                                    : Container(
-                                        color: Colors.grey[300],
-                                        child: const Center(
-                                          child: Icon(Icons.broken_image, size: 64),
+                          return Stack(
+                            children: [
+                              isVideo
+                                  ? VideoPlayerWidget(videoPath: mediaPath)
+                                  : File(mediaPath).existsSync()
+                                      ? Image.file(
+                                          File(mediaPath),
+                                          fit: BoxFit.cover,
+                                          width: double.infinity,
+                                        )
+                                      : Container(
+                                          color: Colors.grey[300],
+                                          child: const Center(
+                                            child: Icon(Icons.broken_image, size: 64),
+                                          ),
                                         ),
+                              if (_post.mediaPaths.length > 1)
+                                Positioned(
+                                  top: 16,
+                                  right: 16,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Text(
+                                      '${index + 1}/${_post.mediaPaths.length}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
                                       ),
-                            if (_post.mediaPaths.length > 1)
-                              Positioned(
-                                top: 16,
-                                right: 16,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Text(
-                                    '${index + 1}/${_post.mediaPaths.length}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
                                     ),
                                   ),
                                 ),
-                              ),
-                          ],
-                        );
-                      },
+                            ],
+                          );
+                        },
+                      ),
                     ),
-                  ),
 
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Title
+                        if (_post.title != null && _post.title!.isNotEmpty) ...[
+                          Text(
+                            _post.title!,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
                         // 좋아요, 댓글, 조회수 + 좋아요 버튼
                         Row(
                           children: [
@@ -404,7 +417,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               final comment = _comments[index];
 
                               if (comment.isUser) {
-                                return UserCommentCard(comment: comment);
+                                return UserCommentCard(
+                                  comment: comment,
+                                  onDelete: () async {
+                                    await _db.deleteComment(comment.id!);
+                                    _loadData();
+                                  },
+                                  onUpdate: (newContent) async {
+                                    final updatedComment = comment.copyWith(content: newContent);
+                                    await _db.updateComment(updatedComment);
+                                    _loadData();
+                                  },
+                                );
                               }
 
                               final persona = _personas[comment.aiPersonaId];
@@ -413,6 +437,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               return CommentCard(
                                 comment: comment,
                                 persona: persona,
+                                onDelete: () async {
+                                  await _db.deleteComment(comment.id!);
+                                  _loadData();
+                                },
                                 onTapPersona: () {
                                   Navigator.push(
                                     context,
@@ -451,13 +479,67 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 }
 
-class UserCommentCard extends StatelessWidget {
+class UserCommentCard extends StatefulWidget {
   final Comment comment;
+  final VoidCallback onDelete;
+  final Function(String) onUpdate;
 
   const UserCommentCard({
     Key? key,
     required this.comment,
+    required this.onDelete,
+    required this.onUpdate,
   }) : super(key: key);
+
+  @override
+  State<UserCommentCard> createState() => _UserCommentCardState();
+}
+
+class _UserCommentCardState extends State<UserCommentCard> {
+  bool _isEditing = false;
+  late TextEditingController _editController;
+
+  @override
+  void initState() {
+    super.initState();
+    _editController = TextEditingController(text: widget.comment.content);
+  }
+
+  @override
+  void dispose() {
+    _editController.dispose();
+    super.dispose();
+  }
+
+  void _confirmDelete() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Comment'),
+        content: const Text('Are you sure you want to delete this comment?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              widget.onDelete();
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _saveEdit() {
+    if (_editController.text.trim().isEmpty) return;
+    widget.onUpdate(_editController.text.trim());
+    setState(() => _isEditing = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -469,11 +551,11 @@ class UserCommentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.person, size: 24, color: Colors.blue),
-                SizedBox(width: 8),
-                Expanded(
+                const Icon(Icons.person, size: 24, color: Colors.blue),
+                const SizedBox(width: 8),
+                const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -487,18 +569,61 @@ class UserCommentCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (!_isEditing) ...[
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 18),
+                    onPressed: () => setState(() => _isEditing = true),
+                    tooltip: 'Edit',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete, size: 18),
+                    onPressed: _confirmDelete,
+                    color: Colors.red,
+                    tooltip: 'Delete',
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 8),
-            Text(comment.content),
-            const SizedBox(height: 4),
-            Text(
-              _formatDate(comment.createdAt),
-              style: const TextStyle(
-                fontSize: 11,
-                color: Colors.grey,
+            if (_isEditing) ...[
+              TextField(
+                controller: _editController,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Edit your comment...',
+                ),
+                maxLines: 3,
+                autofocus: true,
               ),
-            ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      _editController.text = widget.comment.content;
+                      setState(() => _isEditing = false);
+                    },
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _saveEdit,
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Text(widget.comment.content),
+              const SizedBox(height: 4),
+              Text(
+                _formatDate(widget.comment.createdAt),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -525,13 +650,39 @@ class CommentCard extends StatelessWidget {
   final Comment comment;
   final AiPersona persona;
   final VoidCallback onTapPersona;
+  final VoidCallback onDelete;
 
   const CommentCard({
     Key? key,
     required this.comment,
     required this.persona,
     required this.onTapPersona,
+    required this.onDelete,
   }) : super(key: key);
+
+  void _confirmDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete AI Comment'),
+        content: const Text('Are you sure you want to delete this AI comment?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              onDelete();
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -542,39 +693,47 @@ class CommentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            InkWell(
-              onTap: onTapPersona,
-              child: Row(
-                children: [
-                  AvatarWidget(
-                    avatar: persona.avatar,
-                    size: 40,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          persona.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+            Row(
+              children: [
+                InkWell(
+                  onTap: onTapPersona,
+                  child: Row(
+                    children: [
+                      AvatarWidget(
+                        avatar: persona.avatar,
+                        size: 40,
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            persona.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
                           ),
-                        ),
-                        Text(
-                          persona.role,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
+                          Text(
+                            persona.role,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
-                  const Icon(Icons.chat_bubble_outline, size: 16, color: Colors.grey),
-                ],
-              ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.delete, size: 18),
+                  onPressed: () => _confirmDelete(context),
+                  color: Colors.red,
+                  tooltip: 'Delete',
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Text(comment.content),

@@ -7,6 +7,7 @@ class SettingsService {
   static const String _keyLikeProbability = 'like_probability';
   static const String _keyIsFirstTime = 'is_first_time';
   static const String _keyUserProfile = 'user_profile';
+  static const String _keyEnableAiReactions = 'enable_ai_reactions';
 
   static Future<AppSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -27,6 +28,7 @@ class SettingsService {
     final commentProbability = prefs.getDouble(_keyCommentProbability) ?? 0.5;
     final likeProbability = prefs.getDouble(_keyLikeProbability) ?? 0.7;
     final userProfile = prefs.getString(_keyUserProfile) ?? '';
+    final enableAiReactions = prefs.getBool(_keyEnableAiReactions) ?? true;
 
     return AppSettings(
       enabledPersonaIds: enabledPersonaIds,
@@ -34,6 +36,7 @@ class SettingsService {
       likeProbability: likeProbability,
       isFirstTime: false,
       userProfile: userProfile,
+      enableAiReactions: enableAiReactions,
     );
   }
 
@@ -48,6 +51,7 @@ class SettingsService {
     await prefs.setDouble(_keyLikeProbability, settings.likeProbability);
     await prefs.setBool(_keyIsFirstTime, settings.isFirstTime);
     await prefs.setString(_keyUserProfile, settings.userProfile);
+    await prefs.setBool(_keyEnableAiReactions, settings.enableAiReactions);
   }
 
   static Future<bool> isFirstTime() async {

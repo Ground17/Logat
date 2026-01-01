@@ -1,11 +1,10 @@
-import 'ai_persona.dart';
-
 class AppSettings {
   final List<int> enabledPersonaIds;
   final double commentProbability;
   final double likeProbability;
   final bool isFirstTime;
   final String userProfile; // User's bio/profile for AI context
+  final bool enableAiReactions; // Default setting for enabling AI reactions on new posts
 
   AppSettings({
     required this.enabledPersonaIds,
@@ -13,6 +12,7 @@ class AppSettings {
     required this.likeProbability,
     this.isFirstTime = true,
     this.userProfile = '',
+    this.enableAiReactions = true,
   });
 
   factory AppSettings.defaultSettings() {
@@ -22,6 +22,7 @@ class AppSettings {
       likeProbability: 0.7,
       isFirstTime: true,
       userProfile: '',
+      enableAiReactions: true,
     );
   }
 
@@ -32,6 +33,7 @@ class AppSettings {
       'likeProbability': likeProbability,
       'isFirstTime': isFirstTime ? 1 : 0,
       'userProfile': userProfile,
+      'enableAiReactions': enableAiReactions ? 1 : 0,
     };
   }
 
@@ -46,6 +48,7 @@ class AppSettings {
       likeProbability: map['likeProbability'] as double,
       isFirstTime: map['isFirstTime'] == 1,
       userProfile: map['userProfile'] as String? ?? '',
+      enableAiReactions: map['enableAiReactions'] == 1 || map['enableAiReactions'] == null,
     );
   }
 
@@ -55,6 +58,7 @@ class AppSettings {
     double? likeProbability,
     bool? isFirstTime,
     String? userProfile,
+    bool? enableAiReactions,
   }) {
     return AppSettings(
       enabledPersonaIds: enabledPersonaIds ?? this.enabledPersonaIds,
@@ -62,6 +66,7 @@ class AppSettings {
       likeProbability: likeProbability ?? this.likeProbability,
       isFirstTime: isFirstTime ?? this.isFirstTime,
       userProfile: userProfile ?? this.userProfile,
+      enableAiReactions: enableAiReactions ?? this.enableAiReactions,
     );
   }
 }
