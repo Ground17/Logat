@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import '../models/post.dart';
 import '../database/database_helper.dart';
 import '../widgets/video_player_widget.dart';
+import '../utils/marker_generator.dart';
 import 'post_detail_screen.dart';
 import 'create_post_screen.dart';
 import 'friends_screen.dart';
@@ -32,6 +35,9 @@ class _FeedScreenState extends State<FeedScreen> {
   ViewMode _viewMode = ViewMode.list;
   final GlobalKey<_MapViewState> _mapViewKey = GlobalKey<_MapViewState>();
 
+  late StreamSubscription _intentSub;
+  final _sharedFiles = <SharedMediaFile>[];
+
   // Advanced filters (AND conditions)
   bool _filterLikedPosts = false;
   bool _filterSimilarDate = false;
@@ -56,12 +62,37 @@ class _FeedScreenState extends State<FeedScreen> {
     super.initState();
     _loadFiltersFromPreferences();
     _loadPosts();
+
+    // Listen to media sharing coming from outside the app while the app is in the memory.
+    _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen((value) {
+      setState(() {
+        _sharedFiles.clear();
+        _sharedFiles.addAll(value);
+
+        print(_sharedFiles.map((f) => f.toMap()));
+      });
+    }, onError: (err) {
+      print("getIntentDataStream error: $err");
+    });
+
+    // Get the media sharing coming from outside the app while the app is closed.
+    ReceiveSharingIntent.instance.getInitialMedia().then((value) {
+      setState(() {
+        _sharedFiles.clear();
+        _sharedFiles.addAll(value);
+        print(_sharedFiles.map((f) => f.toMap()));
+
+        // Tell the library that we are done processing the intent.
+        ReceiveSharingIntent.instance.reset();
+      });
+    });
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _saveFiltersToPreferences();
+    _intentSub.cancel();
     super.dispose();
   }
 
@@ -79,6 +110,9 @@ class _FeedScreenState extends State<FeedScreen> {
             .values[prefs.getInt('sortOrder') ?? SortOrder.dateDesc.index];
         _dateFilterType = DateFilterType.values[
             prefs.getInt('dateFilterType') ?? DateFilterType.postDate.index];
+
+        // 저장된 보기 모드 복원
+        _viewMode = ViewMode.values[prefs.getInt('viewMode') ?? ViewMode.list.index];
 
         // 저장된 태그 복원
         final savedTags = prefs.getStringList('selectedTags');
@@ -112,6 +146,9 @@ class _FeedScreenState extends State<FeedScreen> {
       await prefs.setInt('sortOrder', _sortOrder.index);
       await prefs.setInt('dateFilterType', _dateFilterType.index);
       await prefs.setStringList('selectedTags', _selectedTags.toList());
+
+      // 보기 모드 저장
+      await prefs.setInt('viewMode', _viewMode.index);
 
       // 날짜 범위 저장
       if (_dateRangeStart != null) {
@@ -759,12 +796,15 @@ class _FeedScreenState extends State<FeedScreen> {
                   const SizedBox(width: 16),
                   FloatingActionButton(
                     heroTag: 'viewModeToggle',
-                    onPressed: () {
+                    onPressed: () async {
                       setState(() {
                         _viewMode = _viewMode == ViewMode.list
                             ? ViewMode.map
                             : ViewMode.list;
                       });
+                      // 보기 모드 변경 시 즉시 저장
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setInt('viewMode', _viewMode.index);
                     },
                     child: Icon(
                       _viewMode == ViewMode.list ? Icons.map : Icons.list,
@@ -790,12 +830,15 @@ class _FeedScreenState extends State<FeedScreen> {
                 children: [
                   FloatingActionButton(
                     heroTag: 'viewModeToggle',
-                    onPressed: () {
+                    onPressed: () async {
                       setState(() {
                         _viewMode = _viewMode == ViewMode.list
                             ? ViewMode.map
                             : ViewMode.list;
                       });
+                      // 보기 모드 변경 시 즉시 저장
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setInt('viewMode', _viewMode.index);
                     },
                     child: Icon(
                       _viewMode == ViewMode.list ? Icons.map : Icons.list,
@@ -1133,16 +1176,27 @@ class _MapViewState extends State<MapView> {
     }
   }
 
-  void _createMarkers() {
+  Future<void> _createMarkers() async {
     final markers = <Marker>{};
 
     for (var post in widget.posts) {
       if (post.latitude != null && post.longitude != null) {
+        BitmapDescriptor? customIcon;
+
+        // Generate custom marker from first media if available
+        if (post.mediaPaths.isNotEmpty) {
+          customIcon = await MarkerGenerator.generateMarker(
+            mediaPath: post.mediaPaths.first,
+            size: 100,
+          );
+        }
+
         markers.add(
           Marker(
             markerId: MarkerId('post_${post.id}'),
             position: LatLng(post.latitude!, post.longitude!),
             onTap: () => widget.onPostTap(post),
+            icon: customIcon ?? BitmapDescriptor.defaultMarker,
             infoWindow: InfoWindow(
               title: post.caption ?? 'Post',
               snippet: post.locationName,
@@ -1152,9 +1206,11 @@ class _MapViewState extends State<MapView> {
       }
     }
 
-    setState(() {
-      _markers = markers;
-    });
+    if (mounted) {
+      setState(() {
+        _markers = markers;
+      });
+    }
   }
 
   LatLngBounds _calculateBounds() {

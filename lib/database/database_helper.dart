@@ -579,4 +579,65 @@ class DatabaseHelper {
     final db = await database;
     await db.close();
   }
+
+  /// Debug method to print all database contents
+  Future<void> printAllDatabaseContents() async {
+    final db = await database;
+
+    print('\n========== DATABASE CONTENTS ==========\n');
+
+    // Get database path
+    final dbPath = await getDatabasesPath();
+    print('Database Location: $dbPath/social_media.db\n');
+
+    // Posts
+    final posts = await db.query('posts');
+    print('========== POSTS (${posts.length}) ==========');
+    for (var post in posts) {
+      print(post);
+    }
+    print('');
+
+    // Comments
+    final comments = await db.query('comments');
+    print('========== COMMENTS (${comments.length}) ==========');
+    for (var comment in comments) {
+      print(comment);
+    }
+    print('');
+
+    // Likes
+    final likes = await db.query('likes');
+    print('========== LIKES (${likes.length}) ==========');
+    for (var like in likes) {
+      print(like);
+    }
+    print('');
+
+    // AI Personas
+    final personas = await db.query('ai_personas');
+    print('========== AI PERSONAS (${personas.length}) ==========');
+    for (var persona in personas) {
+      print(persona);
+    }
+    print('');
+
+    // Chat Messages
+    final messages = await db.query('chat_messages');
+    print('========== CHAT MESSAGES (${messages.length}) ==========');
+    for (var message in messages) {
+      print(message);
+    }
+    print('');
+
+    // Tag Settings
+    final tagSettings = await db.query('tag_settings');
+    print('========== TAG SETTINGS (${tagSettings.length}) ==========');
+    for (var setting in tagSettings) {
+      print(setting);
+    }
+    print('');
+
+    print('========== END OF DATABASE ==========\n');
+  }
 }

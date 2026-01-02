@@ -187,7 +187,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
       // Fallback to coordinates if reverse geocoding fails
       if (mounted) {
         setState(() {
-          _locationController.text = '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}';
+          _locationController.text =
+              '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}';
         });
       }
     }
@@ -279,7 +280,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
       if (_mediaPaths.length >= maxMediaCount) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Maximum $maxMediaCount media files allowed')),
+            SnackBar(
+                content: Text('Maximum $maxMediaCount media files allowed')),
           );
         }
         return;
@@ -322,7 +324,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
       if (_mediaPaths.length >= maxMediaCount) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Maximum $maxMediaCount media files allowed')),
+            SnackBar(
+                content: Text('Maximum $maxMediaCount media files allowed')),
           );
         }
         return;
@@ -341,7 +344,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
         for (var media in medias) {
           final timestamp = DateTime.now().millisecondsSinceEpoch;
           final extension = media.path.split('.').last;
-          final fileName = 'post_${timestamp}_${permanentPaths.length}.$extension';
+          final fileName =
+              'post_${timestamp}_${permanentPaths.length}.$extension';
           final permanentPath = '${appDir.path}/$fileName';
 
           await File(media.path).copy(permanentPath);
@@ -452,16 +456,18 @@ class _EditPostScreenState extends State<EditPostScreen> {
       );
 
       try {
-        final imagePath = await AiService.generateAvatarImage(
+        final imageName = await AiService.generateAvatarImage(
           description: description,
         );
 
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
 
-          if (imagePath != null) {
+          final appDir = await getApplicationDocumentsDirectory();
+
+          if (imageName != null) {
             setState(() {
-              _mediaPaths.add(imagePath);
+              _mediaPaths.add('${appDir.path}/$imageName');
             });
 
             ScaffoldMessenger.of(context).showSnackBar(
@@ -543,7 +549,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
     );
 
     try {
-      final editedImagePath = await AiService.editAvatarImage(
+      final editedFileName = await AiService.editAvatarImage(
         imagePath: imagePath,
         editPrompt: editPrompt,
       );
@@ -551,9 +557,11 @@ class _EditPostScreenState extends State<EditPostScreen> {
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
 
-        if (editedImagePath != null) {
+        final appDir = await getApplicationDocumentsDirectory();
+
+        if (editedFileName != null) {
           setState(() {
-            _mediaPaths[imageIndex] = editedImagePath;
+            _mediaPaths[imageIndex] = '${appDir.path}/$editedFileName';
           });
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -588,7 +596,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
         _titleController.text.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please add a title, photo/video, or location')),
+          const SnackBar(
+              content: Text('Please add a title, photo/video, or location')),
         );
       }
       return;
@@ -600,8 +609,10 @@ class _EditPostScreenState extends State<EditPostScreen> {
       final updatedPost = widget.post.copyWith(
         title: _titleController.text.isEmpty ? null : _titleController.text,
         mediaPaths: _mediaPaths,
-        caption: _captionController.text.isEmpty ? null : _captionController.text,
-        locationName: _locationController.text.isEmpty ? null : _locationController.text,
+        caption:
+            _captionController.text.isEmpty ? null : _captionController.text,
+        locationName:
+            _locationController.text.isEmpty ? null : _locationController.text,
         latitude: _latitude,
         longitude: _longitude,
         tag: _selectedTag,
@@ -656,7 +667,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.add_photo_alternate, size: 64, color: Colors.grey),
+                          const Icon(Icons.add_photo_alternate,
+                              size: 64, color: Colors.grey),
                           const SizedBox(height: 16),
                           const Text(
                             'Add photos or videos',
@@ -665,7 +677,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                           const SizedBox(height: 8),
                           Text(
                             'Up to $maxMediaCount files',
-                            style: const TextStyle(color: Colors.grey, fontSize: 12),
+                            style: const TextStyle(
+                                color: Colors.grey, fontSize: 12),
                           ),
                         ],
                       ),
@@ -674,7 +687,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3,
                         crossAxisSpacing: 8,
                         mainAxisSpacing: 8,
@@ -695,7 +709,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                                         context: context,
                                         builder: (context) => Dialog(
                                           backgroundColor: Colors.black,
-                                          child: VideoPlayerWidget(videoPath: path),
+                                          child: VideoPlayerWidget(
+                                              videoPath: path),
                                         ),
                                       );
                                     }
@@ -719,7 +734,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                                 right: 36,
                                 child: IconButton(
                                   onPressed: () => _showEditPrompt(index),
-                                  icon: const Icon(Icons.auto_awesome, color: Colors.white),
+                                  icon: const Icon(Icons.auto_awesome,
+                                      color: Colors.white),
                                   style: IconButton.styleFrom(
                                     backgroundColor: Colors.black54,
                                     padding: const EdgeInsets.all(4),
@@ -733,7 +749,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                               right: 4,
                               child: IconButton(
                                 onPressed: () => _removeMedia(index),
-                                icon: const Icon(Icons.close, color: Colors.white),
+                                icon: const Icon(Icons.close,
+                                    color: Colors.white),
                                 style: IconButton.styleFrom(
                                   backgroundColor: Colors.black54,
                                   padding: const EdgeInsets.all(4),
@@ -808,8 +825,10 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       labelText: 'Title',
                       hintText: 'Enter post title...',
                       border: const OutlineInputBorder(),
-                      suffixIcon: _mediaPaths.isEmpty && _locationController.text.isEmpty
-                          ? const Icon(Icons.error_outline, color: Colors.orange)
+                      suffixIcon: _mediaPaths.isEmpty &&
+                              _locationController.text.isEmpty
+                          ? const Icon(Icons.error_outline,
+                              color: Colors.orange)
                           : null,
                     ),
                   ),
@@ -855,7 +874,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       Expanded(
                         child: AddressSearchField(
                           controller: _locationController,
-                          hasCoordinates: _latitude != null && _longitude != null,
+                          hasCoordinates:
+                              _latitude != null && _longitude != null,
                           onLocationSelected: (lat, lng, address) {
                             setState(() {
                               _latitude = lat;
@@ -879,7 +899,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
                           icon: const Icon(Icons.my_location),
                           tooltip: 'Use current location',
                           style: IconButton.styleFrom(
-                            backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                            backgroundColor: Theme.of(context)
+                                .primaryColor
+                                .withValues(alpha: 0.1),
                           ),
                         ),
                       ),
@@ -890,7 +912,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
                           icon: const Icon(Icons.edit_location),
                           tooltip: 'Edit location on map',
                           style: IconButton.styleFrom(
-                            backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                            backgroundColor: Theme.of(context)
+                                .primaryColor
+                                .withValues(alpha: 0.1),
                           ),
                         ),
                       ),
@@ -904,7 +928,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                     children: [
                       const Text(
                         'Tag (optional)',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w500),
                       ),
                       const SizedBox(height: 8),
                       Wrap(
@@ -926,14 +951,17 @@ class _EditPostScreenState extends State<EditPostScreen> {
                               label: Text(
                                 TagHelper.defaultTagNames[tag]!,
                                 style: TextStyle(
-                                  color: _selectedTag == tag ? Colors.white : color,
+                                  color: _selectedTag == tag
+                                      ? Colors.white
+                                      : color,
                                 ),
                               ),
                               selected: _selectedTag == tag,
                               selectedColor: color,
                               backgroundColor: color.withValues(alpha: 0.2),
                               onSelected: (selected) {
-                                setState(() => _selectedTag = selected ? tag : null);
+                                setState(
+                                    () => _selectedTag = selected ? tag : null);
                               },
                             );
                           }),
@@ -975,7 +1003,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                         height: 24,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : const Text(

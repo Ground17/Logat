@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/ai_persona.dart';
+import '../models/app_settings.dart';
 import '../database/database_helper.dart';
+import '../services/settings_service.dart';
 import 'persona_management_screen.dart';
 import 'tag_settings_screen.dart';
 import 'webview_screen.dart';
@@ -16,6 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final DatabaseHelper _db = DatabaseHelper.instance;
   List<AiPersona> _allPersonas = [];
   bool _isLoading = true;
+  AiImageModel _preferredImageModel = AiImageModel.openai;
 
   @override
   void initState() {
@@ -27,10 +31,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isLoading = true);
 
     final personas = await _db.getAllPersonas();
+    final settings = await SettingsService.loadSettings();
 
     setState(() {
       _allPersonas = personas;
+      _preferredImageModel = settings.preferredImageModel;
       _isLoading = false;
+    });
+  }
+
+  Future<void> _saveImageModelPreference(AiImageModel model) async {
+    final settings = await SettingsService.loadSettings();
+    await SettingsService.saveSettings(settings.copyWith(
+      preferredImageModel: model,
+    ));
+    setState(() {
+      _preferredImageModel = model;
     });
   }
 
@@ -84,6 +100,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 12),
                   Card(
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.image),
+                          title: const Text('AI Image Generation Model'),
+                          subtitle: Text(
+                            _preferredImageModel == AiImageModel.openai
+                                ? 'Currently using OpenAI (GPT Image 1.5)'
+                                : 'Currently using Google Gemini',
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        RadioListTile<AiImageModel>(
+                          title: const Text('OpenAI (GPT Image 1.5)'),
+                          value: AiImageModel.openai,
+                          groupValue: _preferredImageModel,
+                          onChanged: (value) {
+                            if (value != null) {
+                              _saveImageModelPreference(value);
+                            }
+                          },
+                        ),
+                        RadioListTile<AiImageModel>(
+                          title: const Text('Google Gemini'),
+                          value: AiImageModel.gemini,
+                          groupValue: _preferredImageModel,
+                          onChanged: (value) {
+                            if (value != null) {
+                              _saveImageModelPreference(value);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Card(
                     child: ListTile(
                       leading: const Icon(Icons.description),
                       title: const Text('Terms of Use'),
@@ -114,7 +167,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           context,
                           MaterialPageRoute(
                             builder: (context) => const WebViewScreen(
-                              url: 'https://logat-release.web.app/privacy_policy',
+                              url:
+                                  'https://logat-release.web.app/privacy_policy',
                               title: 'Privacy Policy',
                             ),
                           ),
@@ -122,7 +176,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       },
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.info),
+                      title: const Text('License Information'),
+                      subtitle: const Text('View license information'),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap: () {
+                        showLicensePage(
+                          context: context,
+                          applicationName: 'Logat',
+                        );
+                      },
+                    ),
+                  ),
                   const SizedBox(height: 32),
+
+                  // Debug Section
+                  if (kDebugMode)
+                    Card(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      child: ListTile(
+                        leading:
+                            const Icon(Icons.bug_report, color: Colors.orange),
+                        title: const Text('Debug: View Database Contents'),
+                        subtitle:
+                            const Text('Print all database data to console'),
+                        onTap: () async {
+                          await _db.printAllDatabaseContents();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Database contents printed to console. Check your IDE logs.'),
+                                duration: Duration(seconds: 3),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
                 ],
               ),
             ),

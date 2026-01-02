@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/ai_persona.dart';
 import '../database/database_helper.dart';
 import '../services/ai_service.dart';
@@ -38,8 +39,10 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
     _nameController = TextEditingController(text: persona?.name ?? '');
     _avatarController = TextEditingController(text: persona?.avatar ?? '😊');
     _roleController = TextEditingController(text: persona?.role ?? '');
-    _personalityController = TextEditingController(text: persona?.personality ?? '');
-    _systemPromptController = TextEditingController(text: persona?.systemPrompt ?? '');
+    _personalityController =
+        TextEditingController(text: persona?.personality ?? '');
+    _systemPromptController =
+        TextEditingController(text: persona?.systemPrompt ?? '');
     _bioController = TextEditingController(text: persona?.bio ?? '');
 
     _selectedModel = persona?.aiModel ?? AiModel.gemini3FlashPreview;
@@ -60,8 +63,11 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
 
   /// Check if text is a file path
   bool _isImagePath(String text) {
-    return text.contains('/') && 
-           (text.endsWith('.png') || text.endsWith('.jpg') || text.endsWith('.jpeg') || text.endsWith('.webp'));
+    return text.contains('/') &&
+        (text.endsWith('.png') ||
+            text.endsWith('.jpg') ||
+            text.endsWith('.jpeg') ||
+            text.endsWith('.webp'));
   }
 
   /// Pick image from gallery
@@ -99,7 +105,8 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
             TextField(
               controller: controller,
               decoration: const InputDecoration(
-                hintText: 'e.g., Make the background transparent, enhance colors',
+                hintText:
+                    'e.g., Make the background transparent, enhance colors',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
@@ -135,7 +142,7 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
     );
 
     try {
-      final editedImagePath = await AiService.editAvatarImage(
+      final editedFileName = await AiService.editAvatarImage(
         imagePath: imagePath,
         editPrompt: editPrompt,
       );
@@ -143,9 +150,11 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
 
-        if (editedImagePath != null) {
+        final appDir = await getApplicationDocumentsDirectory();
+
+        if (editedFileName != null) {
           setState(() {
-            _avatarController.text = editedImagePath;
+            _avatarController.text = '${appDir.path}/$editedFileName';
           });
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -223,8 +232,28 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
   }
 
   void _showEmojiPicker() {
-    final emojis = ['😊', '📸', '✈️', '🎮', '🍰', '💪', '🎨', '🎵', '📚', '🌟',
-                    '🐱', '🐶', '🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐰', '🦄'];
+    final emojis = [
+      '😊',
+      '📸',
+      '✈️',
+      '🎮',
+      '🍰',
+      '💪',
+      '🎨',
+      '🎵',
+      '📚',
+      '🌟',
+      '🐱',
+      '🐶',
+      '🦊',
+      '🐼',
+      '🦁',
+      '🐯',
+      '🐻',
+      '🐨',
+      '🐰',
+      '🦄'
+    ];
 
     showDialog(
       context: context,
@@ -314,16 +343,18 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
 
       try {
         // Generate image using DALL-E
-        final imagePath = await AiService.generateAvatarImage(
+        final imageName = await AiService.generateAvatarImage(
           description: description,
         );
 
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
 
-          if (imagePath != null) {
+          final appDir = await getApplicationDocumentsDirectory();
+
+          if (imageName != null) {
             setState(() {
-              _avatarController.text = imagePath;
+              _avatarController.text = '${appDir.path}/$imageName';
             });
 
             ScaffoldMessenger.of(context).showSnackBar(
@@ -334,7 +365,8 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Failed to generate avatar image. Please try again.'),
+                content:
+                    Text('Failed to generate avatar image. Please try again.'),
               ),
             );
           }
@@ -359,11 +391,39 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
 
     setState(() => _isSaving = true);
 
+    // Copy image from temp path to documents directory if needed
+    String avatarPath = _avatarController.text;
+    if (_isImagePath(avatarPath)) {
+      final appDir = await getApplicationDocumentsDirectory();
+      final file = File(avatarPath);
+
+      // Check if file is in temp directory
+      if (!avatarPath.startsWith(appDir.path)) {
+        try {
+          final fileName = avatarPath.split('/').last;
+          final newPath = '${appDir.path}/$fileName';
+          await file.copy(newPath);
+          avatarPath = fileName;
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to copy image: $e')),
+            );
+          }
+          setState(() => _isSaving = false);
+          return;
+        }
+      } else {
+        // Already in documents directory, store only filename
+        avatarPath = avatarPath.split('/').last;
+      }
+    }
+
     try {
       final persona = AiPersona(
         id: widget.persona?.id,
         name: _nameController.text,
-        avatar: _avatarController.text,
+        avatar: avatarPath,
         role: _roleController.text,
         personality: _personalityController.text,
         systemPrompt: _systemPromptController.text,
@@ -480,7 +540,8 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
                         child: _avatarController.text.isEmpty
                             ? Container(
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade300),
+                                  border:
+                                      Border.all(color: Colors.grey.shade300),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: const Icon(Icons.image),
@@ -488,17 +549,20 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
                             : _isImagePath(_avatarController.text)
                                 ? Container(
                                     decoration: BoxDecoration(
-                                      border: Border.all(color: Colors.grey.shade300),
+                                      border: Border.all(
+                                          color: Colors.grey.shade300),
                                       borderRadius: BorderRadius.circular(8),
                                       image: DecorationImage(
-                                        image: FileImage(File(_avatarController.text)),
+                                        image: FileImage(
+                                            File(_avatarController.text)),
                                         fit: BoxFit.cover,
                                       ),
                                     ),
                                   )
                                 : Container(
                                     decoration: BoxDecoration(
-                                      border: Border.all(color: Colors.grey.shade300),
+                                      border: Border.all(
+                                          color: Colors.grey.shade300),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Center(

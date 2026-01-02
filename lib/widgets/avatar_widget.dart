@@ -18,8 +18,8 @@ class AvatarWidget extends StatelessWidget {
 
   /// Check if avatar is a file path (either full path or just filename)
   bool _isImagePath(String text) {
-    return (text.contains('/') || text.startsWith('avatar_')) &&
-           (text.endsWith('.png') ||
+    return (text.contains('/') || text.startsWith('ai_gen_')) &&
+        (text.endsWith('.png') ||
             text.endsWith('.jpg') ||
             text.endsWith('.jpeg') ||
             text.endsWith('.webp'));
@@ -50,7 +50,8 @@ class AvatarWidget extends StatelessWidget {
               width: size,
               height: size,
               decoration: BoxDecoration(
-                color: backgroundColor ?? Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                color: backgroundColor ??
+                    Theme.of(context).primaryColor.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Center(
@@ -72,7 +73,8 @@ class AvatarWidget extends StatelessWidget {
               width: size,
               height: size,
               decoration: BoxDecoration(
-                color: backgroundColor ?? Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                color: backgroundColor ??
+                    Theme.of(context).primaryColor.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: Colors.red.withValues(alpha: 0.3),
@@ -94,7 +96,8 @@ class AvatarWidget extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: backgroundColor ?? Theme.of(context).primaryColor.withValues(alpha: 0.2),
+                color: backgroundColor ??
+                    Theme.of(context).primaryColor.withValues(alpha: 0.2),
                 width: 1,
               ),
             ),
@@ -116,7 +119,8 @@ class AvatarWidget extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: backgroundColor ?? Theme.of(context).primaryColor.withValues(alpha: 0.1),
+          color: backgroundColor ??
+              Theme.of(context).primaryColor.withValues(alpha: 0.1),
           shape: BoxShape.circle,
         ),
         child: Center(
@@ -131,7 +135,8 @@ class AvatarWidget extends StatelessWidget {
 
   Widget _buildErrorWidget(BuildContext context) {
     return Container(
-      color: backgroundColor ?? Theme.of(context).primaryColor.withValues(alpha: 0.1),
+      color: backgroundColor ??
+          Theme.of(context).primaryColor.withValues(alpha: 0.1),
       child: Icon(
         Icons.broken_image,
         size: size * 0.5,
@@ -156,8 +161,8 @@ class CircleAvatarWidget extends StatelessWidget {
 
   /// Check if avatar is a file path (either full path or just filename)
   bool _isImagePath(String text) {
-    return (text.contains('/') || text.startsWith('avatar_')) &&
-           (text.endsWith('.png') ||
+    return (text.contains('/') || text.startsWith('ai_gen_')) &&
+        (text.endsWith('.png') ||
             text.endsWith('.jpg') ||
             text.endsWith('.jpeg') ||
             text.endsWith('.webp'));
@@ -186,7 +191,8 @@ class CircleAvatarWidget extends StatelessWidget {
             // Loading
             return CircleAvatar(
               radius: radius,
-              backgroundColor: backgroundColor ?? Theme.of(context).primaryColor.withValues(alpha: 0.1),
+              backgroundColor: backgroundColor ??
+                  Theme.of(context).primaryColor.withValues(alpha: 0.1),
               child: SizedBox(
                 width: radius * 0.8,
                 height: radius * 0.8,
@@ -201,7 +207,8 @@ class CircleAvatarWidget extends StatelessWidget {
           // Display image avatar
           return CircleAvatar(
             radius: radius,
-            backgroundColor: backgroundColor ?? Theme.of(context).primaryColor.withValues(alpha: 0.1),
+            backgroundColor: backgroundColor ??
+                Theme.of(context).primaryColor.withValues(alpha: 0.1),
             backgroundImage: fileExists ? FileImage(File(fullPath)) : null,
             child: !fileExists
                 ? Icon(
@@ -217,7 +224,8 @@ class CircleAvatarWidget extends StatelessWidget {
       // Display emoji avatar
       return CircleAvatar(
         radius: radius,
-        backgroundColor: backgroundColor ?? Theme.of(context).primaryColor.withValues(alpha: 0.1),
+        backgroundColor: backgroundColor ??
+            Theme.of(context).primaryColor.withValues(alpha: 0.1),
         child: Text(
           avatar,
           style: TextStyle(fontSize: radius * 1.2),

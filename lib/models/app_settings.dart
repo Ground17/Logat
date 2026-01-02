@@ -1,3 +1,8 @@
+enum AiImageModel {
+  openai,
+  gemini,
+}
+
 class AppSettings {
   final List<int> enabledPersonaIds;
   final double commentProbability;
@@ -5,6 +10,7 @@ class AppSettings {
   final bool isFirstTime;
   final String userProfile; // User's bio/profile for AI context
   final bool enableAiReactions; // Default setting for enabling AI reactions on new posts
+  final AiImageModel preferredImageModel; // Preferred AI model for image generation/editing
 
   AppSettings({
     required this.enabledPersonaIds,
@@ -13,6 +19,7 @@ class AppSettings {
     this.isFirstTime = true,
     this.userProfile = '',
     this.enableAiReactions = true,
+    this.preferredImageModel = AiImageModel.openai,
   });
 
   factory AppSettings.defaultSettings() {
@@ -23,6 +30,7 @@ class AppSettings {
       isFirstTime: true,
       userProfile: '',
       enableAiReactions: true,
+      preferredImageModel: AiImageModel.openai,
     );
   }
 
@@ -34,6 +42,7 @@ class AppSettings {
       'isFirstTime': isFirstTime ? 1 : 0,
       'userProfile': userProfile,
       'enableAiReactions': enableAiReactions ? 1 : 0,
+      'preferredImageModel': preferredImageModel.index,
     };
   }
 
@@ -49,6 +58,7 @@ class AppSettings {
       isFirstTime: map['isFirstTime'] == 1,
       userProfile: map['userProfile'] as String? ?? '',
       enableAiReactions: map['enableAiReactions'] == 1 || map['enableAiReactions'] == null,
+      preferredImageModel: AiImageModel.values[map['preferredImageModel'] as int? ?? 0],
     );
   }
 
@@ -59,6 +69,7 @@ class AppSettings {
     bool? isFirstTime,
     String? userProfile,
     bool? enableAiReactions,
+    AiImageModel? preferredImageModel,
   }) {
     return AppSettings(
       enabledPersonaIds: enabledPersonaIds ?? this.enabledPersonaIds,
@@ -67,6 +78,7 @@ class AppSettings {
       isFirstTime: isFirstTime ?? this.isFirstTime,
       userProfile: userProfile ?? this.userProfile,
       enableAiReactions: enableAiReactions ?? this.enableAiReactions,
+      preferredImageModel: preferredImageModel ?? this.preferredImageModel,
     );
   }
 }

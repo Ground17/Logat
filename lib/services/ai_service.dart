@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/ai_persona.dart';
 import '../models/post.dart';
+import '../models/app_settings.dart';
+import '../services/settings_service.dart';
 import '../key.dart';
 
 class AiService {
@@ -18,9 +21,8 @@ class AiService {
     String userProfile = '',
   }) async {
     final mediaCount = post.mediaPaths.length;
-    final userContext = userProfile.isNotEmpty
-        ? '\n- About the user: $userProfile'
-        : '';
+    final userContext =
+        userProfile.isNotEmpty ? '\n- About the user: $userProfile' : '';
     final prompt = '''Post information:
 - Caption: ${post.caption ?? 'None'}
 - Location: ${post.locationName ?? 'None'}
@@ -33,7 +35,8 @@ Keep the comment brief (1-2 sentences) and let ${persona.name}'s unique characte
     String? imagePath;
     if (post.mediaPaths.isNotEmpty) {
       final firstMedia = post.mediaPaths.first;
-      if (firstMedia.toLowerCase().endsWith('.mp4') || firstMedia.toLowerCase().endsWith('.mov')) {
+      if (firstMedia.toLowerCase().endsWith('.mp4') ||
+          firstMedia.toLowerCase().endsWith('.mov')) {
         // Extract thumbnail from video
         imagePath = await _extractVideoThumbnail(firstMedia);
       } else {
@@ -77,9 +80,8 @@ Keep the comment brief (1-2 sentences) and let ${persona.name}'s unique characte
     required Post post,
     String userProfile = '',
   }) async {
-    final userContext = userProfile.isNotEmpty
-        ? '\n- About the user: $userProfile'
-        : '';
+    final userContext =
+        userProfile.isNotEmpty ? '\n- About the user: $userProfile' : '';
     final prompt = '''Post information:
 - Caption: ${post.caption ?? 'None'}
 - Location: ${post.locationName ?? 'None'}$userContext
@@ -164,11 +166,15 @@ Answer only "yes" or "no".''';
     // Add system prompt as first user message
     contents.add({
       'role': 'user',
-      'parts': [{'text': systemPrompt}],
+      'parts': [
+        {'text': systemPrompt}
+      ],
     });
     contents.add({
       'role': 'model',
-      'parts': [{'text': 'Understood. I will act accordingly.'}],
+      'parts': [
+        {'text': 'Understood. I will act accordingly.'}
+      ],
     });
 
     // Add chat history
@@ -176,7 +182,9 @@ Answer only "yes" or "no".''';
       for (var message in chatHistory) {
         contents.add({
           'role': message['isUser'] == 'true' ? 'user' : 'model',
-          'parts': [{'text': message['content']}],
+          'parts': [
+            {'text': message['content']}
+          ],
         });
       }
     }
@@ -339,15 +347,28 @@ Answer only "yes" or "no".''';
     required String description,
   }) async {
     final enhancedPrompt = _enhancePrompt(description);
-    
-    // Try Gemini first
-    final geminiResult = await _generateImageWithGemini(enhancedPrompt);
-    if (geminiResult != null) {
-      return geminiResult;
-    }
 
-    // Fallback to OpenAI
-    return await _generateImageWithOpenAI(enhancedPrompt);
+    // Load user's preferred model
+    final settings = await SettingsService.loadSettings();
+    final preferredModel = settings.preferredImageModel;
+
+    if (preferredModel == AiImageModel.gemini) {
+      // Try Gemini first
+      final geminiResult = await _generateImageWithGemini(enhancedPrompt);
+      if (geminiResult != null) {
+        return geminiResult;
+      }
+      // Fallback to OpenAI if Gemini fails
+      return await _generateImageWithOpenAI(enhancedPrompt);
+    } else {
+      // Try OpenAI first
+      final openaiResult = await _generateImageWithOpenAI(enhancedPrompt);
+      if (openaiResult != null) {
+        return openaiResult;
+      }
+      // Fallback to Gemini if OpenAI fails
+      return await _generateImageWithGemini(enhancedPrompt);
+    }
   }
 
   /// Generate image using Gemini 3 Pro Image
@@ -378,24 +399,25 @@ Answer only "yes" or "no".''';
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final candidates = data['candidates'] as List;
-        
+
         if (candidates.isNotEmpty) {
           final parts = candidates[0]['content']['parts'] as List;
-          
+
           // Find inlineData with image
           for (var part in parts) {
             if (part.containsKey('inlineData')) {
               final inlineData = part['inlineData'];
               final base64Image = inlineData['data'] as String;
               final mimeType = inlineData['mimeType'] as String;
-              
+
               // Save the base64 image to file
               return await _saveBase64Image(base64Image, mimeType);
             }
           }
         }
       } else {
-        print('Gemini Image Generation error: ${response.statusCode} - ${response.body}');
+        print(
+            'Gemini Image Generation error: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       print('Failed to generate image with Gemini: $e');
@@ -424,18 +446,13 @@ Answer only "yes" or "no".''';
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final imageUrl = data['data'][0]['url'] as String;
-        
-        // Download image and convert to base64
-        final imageResponse = await http.get(Uri.parse(imageUrl));
-        if (imageResponse.statusCode == 200) {
-          final base64Image = base64Encode(imageResponse.bodyBytes);
-          
-          // Save the base64 image to file
-          return await _saveBase64Image(base64Image, 'image/png');
-        }
+        final base64Image = data['data'][0]['b64_json'] as String;
+
+        // Save the base64 image to file
+        return await _saveBase64Image(base64Image, 'image/png');
       } else {
-        print('OpenAI Image Generation error: ${response.statusCode} - ${response.body}');
+        print(
+            'OpenAI Image Generation error: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       print('Failed to generate image with OpenAI: $e');
@@ -450,7 +467,8 @@ Answer only "yes" or "no".''';
 
   /// Save base64 encoded image to local storage
   /// Returns only the filename (not the full path)
-  static Future<String?> _saveBase64Image(String base64Image, String mimeType) async {
+  static Future<String?> _saveBase64Image(
+      String base64Image, String mimeType) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -462,7 +480,7 @@ Answer only "yes" or "no".''';
         extension = 'webp';
       }
 
-      final fileName = 'avatar_$timestamp.$extension';
+      final fileName = 'ai_gen_$timestamp.$extension';
       final file = File('${appDir.path}/$fileName');
 
       final imageBytes = base64Decode(base64Image);
@@ -481,14 +499,27 @@ Answer only "yes" or "no".''';
     required String imagePath,
     required String editPrompt,
   }) async {
-    // Try Gemini first
-    final geminiResult = await _editImageWithGemini(imagePath, editPrompt);
-    if (geminiResult != null) {
-      return geminiResult;
-    }
+    // Load user's preferred model
+    final settings = await SettingsService.loadSettings();
+    final preferredModel = settings.preferredImageModel;
 
-    // Fallback to OpenAI
-    return await _editImageWithOpenAI(imagePath, editPrompt);
+    if (preferredModel == AiImageModel.gemini) {
+      // Try Gemini first
+      final geminiResult = await _editImageWithGemini(imagePath, editPrompt);
+      if (geminiResult != null) {
+        return geminiResult;
+      }
+      // Fallback to OpenAI if Gemini fails
+      return await _editImageWithOpenAI(imagePath, editPrompt);
+    } else {
+      // Try OpenAI first
+      final openaiResult = await _editImageWithOpenAI(imagePath, editPrompt);
+      if (openaiResult != null) {
+        return openaiResult;
+      }
+      // Fallback to Gemini if OpenAI fails
+      return await _editImageWithGemini(imagePath, editPrompt);
+    }
   }
 
   /// Edit image using Gemini
@@ -497,9 +528,16 @@ Answer only "yes" or "no".''';
     String editPrompt,
   ) async {
     try {
-      final imageFile = File(imagePath);
+      // Get full path if only filename is provided
+      String fullPath = imagePath;
+      if (!imagePath.contains('/')) {
+        final appDir = await getApplicationDocumentsDirectory();
+        fullPath = '${appDir.path}/$imagePath';
+      }
+
+      final imageFile = File(fullPath);
       if (!await imageFile.exists()) {
-        print('Image file not found: $imagePath');
+        print('Image file not found: $fullPath');
         return null;
       }
 
@@ -508,9 +546,10 @@ Answer only "yes" or "no".''';
 
       // Determine MIME type
       String mimeType = 'image/png';
-      if (imagePath.toLowerCase().endsWith('.jpg') || imagePath.toLowerCase().endsWith('.jpeg')) {
+      if (fullPath.toLowerCase().endsWith('.jpg') ||
+          fullPath.toLowerCase().endsWith('.jpeg')) {
         mimeType = 'image/jpeg';
-      } else if (imagePath.toLowerCase().endsWith('.webp')) {
+      } else if (fullPath.toLowerCase().endsWith('.webp')) {
         mimeType = 'image/webp';
       }
 
@@ -561,7 +600,8 @@ Answer only "yes" or "no".''';
           }
         }
       } else {
-        print('Gemini Image Edit error: ${response.statusCode} - ${response.body}');
+        print(
+            'Gemini Image Edit error: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       print('Failed to edit image with Gemini: $e');
@@ -575,9 +615,16 @@ Answer only "yes" or "no".''';
     String editPrompt,
   ) async {
     try {
-      final imageFile = File(imagePath);
+      // Get full path if only filename is provided
+      String fullPath = imagePath;
+      if (!imagePath.contains('/')) {
+        final appDir = await getApplicationDocumentsDirectory();
+        fullPath = '${appDir.path}/$imagePath';
+      }
+
+      final imageFile = File(fullPath);
       if (!await imageFile.exists()) {
-        print('Image file not found: $imagePath');
+        print('Image file not found: $fullPath');
         return null;
       }
 
@@ -586,9 +633,22 @@ Answer only "yes" or "no".''';
       final request = http.MultipartRequest('POST', url);
       request.headers['Authorization'] = 'Bearer $openaiApiKey';
 
-      // Add image file
+      // Determine MIME type from file extension
+      String mimeSubtype = 'png';
+      if (fullPath.toLowerCase().endsWith('.jpg') ||
+          fullPath.toLowerCase().endsWith('.jpeg')) {
+        mimeSubtype = 'jpeg';
+      } else if (fullPath.toLowerCase().endsWith('.webp')) {
+        mimeSubtype = 'webp';
+      }
+
+      // Add image file with explicit MIME type
       request.files.add(
-        await http.MultipartFile.fromPath('image', imagePath),
+        await http.MultipartFile.fromPath(
+          'image',
+          fullPath,
+          contentType: MediaType('image', mimeSubtype),
+        ),
       );
 
       // Add prompt
@@ -602,17 +662,14 @@ Answer only "yes" or "no".''';
       if (response.statusCode == 200) {
         final responseBody = await response.stream.bytesToString();
         final data = jsonDecode(responseBody);
-        final imageUrl = data['data'][0]['url'] as String;
+        final base64Image = data['data'][0]['b64_json'] as String;
 
-        // Download image and convert to base64
-        final imageResponse = await http.get(Uri.parse(imageUrl));
-        if (imageResponse.statusCode == 200) {
-          final base64Image = base64Encode(imageResponse.bodyBytes);
-          return await _saveBase64Image(base64Image, 'image/png');
-        }
+        // Save the base64 image to file
+        return await _saveBase64Image(base64Image, 'image/png');
       } else {
         final responseBody = await response.stream.bytesToString();
-        print('OpenAI Image Edit error: ${response.statusCode} - $responseBody');
+        print(
+            'OpenAI Image Edit error: ${response.statusCode} - $responseBody');
       }
     } catch (e) {
       print('Failed to edit image with OpenAI: $e');

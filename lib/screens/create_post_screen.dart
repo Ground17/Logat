@@ -138,7 +138,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Future<void> _extractLocationFromImage(String imagePath) async {
     // Return early if media is a video (only process images)
     if (imagePath.toLowerCase().endsWith('.mp4') ||
-      imagePath.toLowerCase().endsWith('.mov')) {
+        imagePath.toLowerCase().endsWith('.mov')) {
       return;
     }
 
@@ -483,16 +483,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       );
 
       try {
-        final imagePath = await AiService.generateAvatarImage(
+        final imageName = await AiService.generateAvatarImage(
           description: description,
         );
 
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
 
-          if (imagePath != null) {
+          final appDir = await getApplicationDocumentsDirectory();
+
+          if (imageName != null) {
             setState(() {
-              _mediaPaths.add(imagePath);
+              _mediaPaths.add('${appDir.path}/$imageName');
             });
 
             ScaffoldMessenger.of(context).showSnackBar(
@@ -574,7 +576,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
 
     try {
-      final editedImagePath = await AiService.editAvatarImage(
+      final editedFileName = await AiService.editAvatarImage(
         imagePath: imagePath,
         editPrompt: editPrompt,
       );
@@ -582,9 +584,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
 
-        if (editedImagePath != null) {
+        final appDir = await getApplicationDocumentsDirectory();
+
+        if (editedFileName != null) {
           setState(() {
-            _mediaPaths[imageIndex] = editedImagePath;
+            _mediaPaths[imageIndex] = '${appDir.path}/$editedFileName';
           });
 
           ScaffoldMessenger.of(context).showSnackBar(
