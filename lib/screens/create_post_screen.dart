@@ -774,6 +774,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<void> _enqueueAiReactionTask(Post post) async {
     await AiTaskQueueService.instance.enqueueReactionTask(post.id!);
+    // Process tasks in background (don't await)
+    AiTaskQueueService.instance.processPendingTasks();
   }
 
   @override

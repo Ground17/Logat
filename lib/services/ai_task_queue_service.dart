@@ -86,14 +86,14 @@ class AiTaskQueueService {
         return;
       }
 
-      // Generate a single random time within 24 hours for ALL AI personas
-      final randomMinutes = Random().nextInt(24 * 60); // 0 to 1440 minutes (24 hours)
-      final scheduledTime = DateTime.now().add(Duration(minutes: randomMinutes));
-
-      print('📅 Scheduled time for all AI reactions: $scheduledTime (in ${randomMinutes ~/ 60}h ${randomMinutes % 60}m)');
-
-      // Process each enabled persona
+      // Process each enabled persona with individual random times
       for (final persona in enabledPersonas) {
+        // Generate a random time within 24 hours for each persona
+        final randomMinutes = Random().nextInt(24 * 60); // 0 to 1440 minutes (24 hours)
+        final scheduledTime = DateTime.now().add(Duration(minutes: randomMinutes));
+
+        print('📅 Scheduled time for ${persona.name}: $scheduledTime (in ${randomMinutes ~/ 60}h ${randomMinutes % 60}m)');
+
         await _processPersonaReaction(
           persona: persona,
           post: post,

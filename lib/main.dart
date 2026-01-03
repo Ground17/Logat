@@ -57,11 +57,8 @@ class _SplashScreenState extends State<SplashScreen> {
     // Initialize notification system FIRST
     await NotificationSchedulerService.instance.initialize();
 
-    // Process pending AI tasks (3 in parallel)
-    await AiTaskQueueService.instance.processPendingTasks();
-
-    // Process any overdue notifications
-    await NotificationSchedulerService.instance.processOverdueNotifications();
+    // Process pending AI tasks in background (don't await)
+    AiTaskQueueService.instance.processPendingTasks();
 
     // Check and migrate media files to permanent storage
     await MediaMigration.logMediaStats();
@@ -72,9 +69,9 @@ class _SplashScreenState extends State<SplashScreen> {
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-            builder: (context) =>
-                /* isFirstTime ? */ const TermsAgreementScreen() // : const FeedScreen(),
-            ),
+          builder: (context) =>
+              isFirstTime ? const TermsAgreementScreen() : const FeedScreen(),
+        ),
       );
     }
   }

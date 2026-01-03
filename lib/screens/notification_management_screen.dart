@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import '../database/database_helper.dart';
 import '../models/scheduled_notification.dart';
 import '../models/ai_persona.dart';
@@ -44,7 +46,14 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
       for (final personaId in personaIds) {
         if (!_personaCache.containsKey(personaId)) {
           final persona = await DatabaseHelper.instance.getPersona(personaId!);
-          _personaCache[personaId] = persona;
+
+          // Convert avatar filename to full path if needed
+          if (persona != null) {
+            final convertedPersona = await _convertPersonaAvatarPath(persona);
+            _personaCache[personaId] = convertedPersona;
+          } else {
+            _personaCache[personaId] = persona;
+          }
         }
       }
 
@@ -67,6 +76,43 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
         );
       }
     }
+  }
+
+  /// Convert persona avatar filename to full path if needed
+  Future<AiPersona> _convertPersonaAvatarPath(AiPersona persona) async {
+    final avatarText = persona.avatar;
+    print('🔍 Converting avatar for ${persona.name}: $avatarText');
+
+    // Check if it's a filename (has image extension but no path separator)
+    if (avatarText.isNotEmpty &&
+        !avatarText.contains('/') &&
+        (avatarText.endsWith('.png') ||
+            avatarText.endsWith('.jpg') ||
+            avatarText.endsWith('.jpeg') ||
+            avatarText.endsWith('.webp'))) {
+      try {
+        final appDir = await getApplicationDocumentsDirectory();
+        final fullPath = '${appDir.path}/$avatarText';
+        print('📁 Checking file: $fullPath');
+
+        // Check if file exists at this path
+        final file = File(fullPath);
+        if (await file.exists()) {
+          print('✅ File exists, converting to: $fullPath');
+          // Return persona with converted avatar path
+          return persona.copyWith(avatar: fullPath);
+        } else {
+          print('⚠️ File does not exist: $fullPath');
+        }
+      } catch (e) {
+        print('❌ Error converting persona avatar path: $e');
+      }
+    } else {
+      print('ℹ️ No conversion needed (already path or emoji): $avatarText');
+    }
+
+    // Return original persona if no conversion needed
+    return persona;
   }
 
   Future<void> _editNotificationTime(ScheduledNotification notification) async {
@@ -178,16 +224,28 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
         ? 'Scheduled for ${dateFormat.format(notification.scheduledTime)}'
         : 'Delivered ${dateFormat.format(notification.scheduledTime)}';
 
+    // Check if avatar is an image path
+    final bool isImagePath = personaAvatar.contains('/') &&
+        (personaAvatar.endsWith('.png') ||
+            personaAvatar.endsWith('.jpg') ||
+            personaAvatar.endsWith('.jpeg') ||
+            personaAvatar.endsWith('.webp'));
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: Text(
-            personaAvatar,
-            style: const TextStyle(fontSize: 24),
-          ),
-        ),
+        leading: isImagePath
+            ? CircleAvatar(
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                backgroundImage: FileImage(File(personaAvatar)),
+              )
+            : CircleAvatar(
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                child: Text(
+                  personaAvatar,
+                  style: const TextStyle(fontSize: 24),
+                ),
+              ),
         title: Text(title),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

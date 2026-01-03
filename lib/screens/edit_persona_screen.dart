@@ -48,6 +48,40 @@ class _EditPersonaScreenState extends State<EditPersonaScreen> {
     _selectedModel = persona?.aiModel ?? AiModel.gemini3FlashPreview;
     _commentProbability = persona?.commentProbability ?? 0.5;
     _likeProbability = persona?.likeProbability ?? 0.7;
+
+    // Convert filename to full path if needed
+    _convertAvatarFilenameToFullPath();
+  }
+
+  /// Convert avatar filename to full path in Documents directory
+  Future<void> _convertAvatarFilenameToFullPath() async {
+    final avatarText = _avatarController.text;
+
+    // Check if it's a filename (has image extension but no path separator)
+    if (avatarText.isNotEmpty &&
+        !avatarText.contains('/') &&
+        (avatarText.endsWith('.png') ||
+            avatarText.endsWith('.jpg') ||
+            avatarText.endsWith('.jpeg') ||
+            avatarText.endsWith('.webp'))) {
+      try {
+        final appDir = await getApplicationDocumentsDirectory();
+        final fullPath = '${appDir.path}/$avatarText';
+
+        // Check if file exists at this path
+        final file = File(fullPath);
+        if (await file.exists()) {
+          setState(() {
+            _avatarController.text = fullPath;
+          });
+          print('✓ Converted filename to full path: $fullPath');
+        } else {
+          print('⚠️ Avatar file not found: $fullPath');
+        }
+      } catch (e) {
+        print('❌ Error converting avatar filename: $e');
+      }
+    }
   }
 
   @override

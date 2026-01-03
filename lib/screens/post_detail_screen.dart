@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/post.dart';
 import '../models/comment.dart';
 import '../models/like.dart';
@@ -303,6 +304,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 style: const TextStyle(color: Colors.grey),
                               ),
                             ],
+                          ),
+                        ],
+
+                        // Map display if latitude/longitude exist
+                        if (_post.latitude != null && _post.longitude != null) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            height: 200,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: GoogleMap(
+                              initialCameraPosition: CameraPosition(
+                                target: LatLng(_post.latitude!, _post.longitude!),
+                                zoom: 15,
+                              ),
+                              markers: {
+                                Marker(
+                                  markerId: const MarkerId('post_location'),
+                                  position: LatLng(_post.latitude!, _post.longitude!),
+                                  infoWindow: InfoWindow(
+                                    title: _post.locationName ?? 'Location',
+                                  ),
+                                ),
+                              },
+                              zoomControlsEnabled: false,
+                              myLocationButtonEnabled: false,
+                              mapToolbarEnabled: false,
+                            ),
                           ),
                         ],
 
