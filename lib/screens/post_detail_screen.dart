@@ -184,8 +184,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         itemCount: _post.mediaPaths.length,
                         itemBuilder: (context, index) {
                           final mediaPath = _post.mediaPaths[index];
-                          final isVideo = mediaPath.toLowerCase().endsWith('.mp4') ||
-                              mediaPath.toLowerCase().endsWith('.mov');
+                          final isVideo =
+                              mediaPath.toLowerCase().endsWith('.mp4') ||
+                                  mediaPath.toLowerCase().endsWith('.mov');
 
                           return Stack(
                             children: [
@@ -200,7 +201,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       : Container(
                                           color: Colors.grey[300],
                                           child: const Center(
-                                            child: Icon(Icons.broken_image, size: 64),
+                                            child: Icon(Icons.broken_image,
+                                                size: 64),
                                           ),
                                         ),
                               if (_post.mediaPaths.length > 1)
@@ -253,7 +255,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           children: [
                             IconButton(
                               icon: Icon(
-                                _userLiked ? Icons.favorite : Icons.favorite_border,
+                                _userLiked
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
                                 color: _userLiked ? Colors.red : Colors.grey,
                               ),
                               onPressed: _toggleLike,
@@ -291,7 +295,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                              const Icon(Icons.location_on,
+                                  size: 16, color: Colors.grey),
                               const SizedBox(width: 4),
                               Text(
                                 _post.locationName!,
@@ -332,13 +337,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 );
                               }
                               final persona = _personas[like.aiPersonaId];
-                              if (persona == null) return const SizedBox.shrink();
+                              if (persona == null)
+                                return const SizedBox.shrink();
                               return Chip(
                                 avatar: AvatarWidget(
                                   avatar: persona.avatar,
                                   size: 24,
                                 ),
-                                label: Text(persona.name),
+                                label: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(persona.name),
+                                    const SizedBox(width: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 3, vertical: 0),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue,
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                      child: const Text(
+                                        'AI',
+                                        style: TextStyle(
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               );
                             }).toList(),
                           ),
@@ -424,7 +452,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     _loadData();
                                   },
                                   onUpdate: (newContent) async {
-                                    final updatedComment = comment.copyWith(content: newContent);
+                                    final updatedComment =
+                                        comment.copyWith(content: newContent);
                                     await _db.updateComment(updatedComment);
                                     _loadData();
                                   },
@@ -432,7 +461,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               }
 
                               final persona = _personas[comment.aiPersonaId];
-                              if (persona == null) return const SizedBox.shrink();
+                              if (persona == null)
+                                return const SizedBox.shrink();
 
                               return CommentCard(
                                 comment: comment,
@@ -707,12 +737,33 @@ class CommentCard extends StatelessWidget {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            persona.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                persona.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                child: const Text(
+                                  'AI',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           Text(
                             persona.role,

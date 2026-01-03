@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:location/location.dart';
 import 'package:intl/intl.dart';
+import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import '../models/post.dart';
 import '../database/database_helper.dart';
 import '../services/ai_service.dart';
@@ -292,15 +293,24 @@ class _EditPostScreenState extends State<EditPostScreen> {
           : await _picker.pickImage(source: source);
 
       if (media != null) {
-        // Copy to permanent storage
         final appDir = await getApplicationDocumentsDirectory();
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final extension = media.path.split('.').last;
-        final fileName = 'post_$timestamp.$extension';
-        final permanentPath = '${appDir.path}/$fileName';
+        String permanentPath;
 
-        await File(media.path).copy(permanentPath);
-        print('📸 Copied: ${media.path} -> $permanentPath');
+        // Check if file is already in Documents directory
+        if (media.path.startsWith(appDir.path)) {
+          // File is already in Documents, no need to copy
+          permanentPath = media.path;
+          print('✓ File already in Documents: $permanentPath');
+        } else {
+          // Copy to permanent storage
+          final timestamp = DateTime.now().millisecondsSinceEpoch;
+          final extension = media.path.split('.').last;
+          final fileName = 'post_$timestamp.$extension';
+          permanentPath = '${appDir.path}/$fileName';
+
+          await File(media.path).copy(permanentPath);
+          print('📸 Copied: ${media.path} -> $permanentPath');
+        }
 
         setState(() {
           _mediaPaths.add(permanentPath);
@@ -340,16 +350,25 @@ class _EditPostScreenState extends State<EditPostScreen> {
         final appDir = await getApplicationDocumentsDirectory();
         final List<String> permanentPaths = [];
 
-        // Copy each media file to permanent storage
+        // Copy each media file to permanent storage (skip if already in Documents)
         for (var media in medias) {
-          final timestamp = DateTime.now().millisecondsSinceEpoch;
-          final extension = media.path.split('.').last;
-          final fileName =
-              'post_${timestamp}_${permanentPaths.length}.$extension';
-          final permanentPath = '${appDir.path}/$fileName';
+          // Check if file is already in Documents directory
+          if (media.path.startsWith(appDir.path)) {
+            // File is already in Documents, no need to copy
+            permanentPaths.add(media.path);
+            print('✓ File already in Documents: ${media.path}');
+          } else {
+            // Copy to permanent storage
+            final timestamp = DateTime.now().millisecondsSinceEpoch;
+            final extension = media.path.split('.').last;
+            final fileName =
+                'post_${timestamp}_${permanentPaths.length}.$extension';
+            final permanentPath = '${appDir.path}/$fileName';
 
-          await File(media.path).copy(permanentPath);
-          permanentPaths.add(permanentPath);
+            await File(media.path).copy(permanentPath);
+            permanentPaths.add(permanentPath);
+            print('📸 Copied: ${media.path} -> $permanentPath');
+          }
         }
 
         setState(() {
@@ -684,7 +703,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       ),
                     )
                   else
-                    GridView.builder(
+                    ReorderableGridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate:
@@ -694,12 +713,19 @@ class _EditPostScreenState extends State<EditPostScreen> {
                         mainAxisSpacing: 8,
                       ),
                       itemCount: _mediaPaths.length,
+                      onReorder: (oldIndex, newIndex) {
+                        setState(() {
+                          final item = _mediaPaths.removeAt(oldIndex);
+                          _mediaPaths.insert(newIndex, item);
+                        });
+                      },
                       itemBuilder: (context, index) {
                         final path = _mediaPaths[index];
                         final isVideo = path.toLowerCase().endsWith('.mp4') ||
                             path.toLowerCase().endsWith('.mov');
 
                         return Stack(
+                          key: ValueKey(path),
                           children: [
                             GestureDetector(
                               onTap: isVideo

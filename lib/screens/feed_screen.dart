@@ -9,10 +9,12 @@ import '../models/post.dart';
 import '../database/database_helper.dart';
 import '../widgets/video_player_widget.dart';
 import '../utils/marker_generator.dart';
+import '../services/notification_scheduler_service.dart';
 import 'post_detail_screen.dart';
 import 'create_post_screen.dart';
 import 'friends_screen.dart';
 import 'settings_screen.dart';
+import 'notification_management_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({Key? key}) : super(key: key);
@@ -57,20 +59,27 @@ class _FeedScreenState extends State<FeedScreen> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
+  // Notification badge
+  int _unreadNotificationCount = 0;
+
   @override
   void initState() {
     super.initState();
     _loadFiltersFromPreferences();
     _loadPosts();
+    _loadUnreadCount();
 
     // Listen to media sharing coming from outside the app while the app is in the memory.
     _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen((value) {
       setState(() {
         _sharedFiles.clear();
         _sharedFiles.addAll(value);
-
-        print(_sharedFiles.map((f) => f.toMap()));
       });
+
+      // Navigate to CreatePostScreen with shared files
+      if (value.isNotEmpty) {
+        _handleSharedFiles(value);
+      }
     }, onError: (err) {
       print("getIntentDataStream error: $err");
     });
@@ -80,11 +89,15 @@ class _FeedScreenState extends State<FeedScreen> {
       setState(() {
         _sharedFiles.clear();
         _sharedFiles.addAll(value);
-        print(_sharedFiles.map((f) => f.toMap()));
 
         // Tell the library that we are done processing the intent.
         ReceiveSharingIntent.instance.reset();
       });
+
+      // Navigate to CreatePostScreen with shared files
+      if (value.isNotEmpty) {
+        _handleSharedFiles(value);
+      }
     });
   }
 
@@ -167,6 +180,31 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  Future<void> _handleSharedFiles(List<SharedMediaFile> files) async {
+    // Extract file paths from shared media files
+    final mediaPaths = files.map((file) => file.path).toList();
+
+    // Navigate to CreatePostScreen with the shared files
+    if (mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CreatePostScreen(
+            initialMediaPaths: mediaPaths,
+          ),
+        ),
+      );
+
+      // Reload posts after returning from CreatePostScreen
+      _loadPosts();
+
+      // Clear shared files
+      setState(() {
+        _sharedFiles.clear();
+      });
+    }
+  }
+
   Future<void> _loadPosts() async {
     setState(() => _isLoading = true);
     final posts = await _db.getAllPosts();
@@ -175,6 +213,15 @@ class _FeedScreenState extends State<FeedScreen> {
       _applyFiltersAndSort();
       _isLoading = false;
     });
+  }
+
+  Future<void> _loadUnreadCount() async {
+    final count = await NotificationSchedulerService.instance.getBadgeCount();
+    if (mounted) {
+      setState(() {
+        _unreadNotificationCount = count;
+      });
+    }
   }
 
   Future<void> _applyFiltersAndSort() async {
@@ -687,11 +734,47 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
               onPressed: _showFilterDialog,
             ),
-            IconButton(
-              icon: const Icon(Icons.notifications),
-              onPressed: () {
-                // TODO: Implement notifications screen and functionality
-              },
+            Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.notifications),
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const NotificationManagementScreen(),
+                      ),
+                    );
+                    // Reload badge count after returning from notification screen
+                    await _loadUnreadCount();
+                  },
+                ),
+                if (_unreadNotificationCount > 0)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        _unreadNotificationCount > 99 ? '99+' : '$_unreadNotificationCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             IconButton(
               icon: const Icon(Icons.chat_bubble_outline),

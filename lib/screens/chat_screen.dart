@@ -80,10 +80,12 @@ class _ChatScreenState extends State<ChatScreen> {
       await _db.createChatMessage(userMessage);
 
       // 대화 히스토리 준비
-      final chatHistory = _messages.map((msg) => {
-        'isUser': msg.isUser.toString(),
-        'content': msg.content,
-      }).toList();
+      final chatHistory = _messages
+          .map((msg) => {
+                'isUser': msg.isUser.toString(),
+                'content': msg.content,
+              })
+          .toList();
 
       // AI 응답 생성
       final aiResponse = await AiService.generateChatResponse(
@@ -156,9 +158,30 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    widget.persona.name,
-                    style: const TextStyle(fontSize: 18),
+                  Row(
+                    children: [
+                      Text(
+                        widget.persona.name,
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.blue,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: const Text(
+                          'AI',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   Text(
                     widget.persona.role,
@@ -191,7 +214,30 @@ class _ChatScreenState extends State<ChatScreen> {
                         size: 40,
                       ),
                       const SizedBox(width: 12),
-                      Text(widget.persona.name),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Text(widget.persona.name),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.blue,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                              child: const Text(
+                                'AI',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                   content: Column(

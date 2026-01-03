@@ -6,6 +6,8 @@ import '../models/comment.dart';
 import '../models/like.dart';
 import '../models/ai_persona.dart';
 import '../models/chat_message.dart';
+import '../models/ai_task.dart';
+import '../models/scheduled_notification.dart';
 import '../data/default_personas.dart';
 
 class DatabaseHelper {
@@ -26,7 +28,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -195,6 +197,39 @@ class DatabaseHelper {
       // Add postDate field
       await db.execute('ALTER TABLE posts ADD COLUMN postDate TEXT');
     }
+
+    if (oldVersion < 9) {
+      // Create ai_tasks table for queue-based AI processing
+      await db.execute('''
+        CREATE TABLE ai_tasks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          postId INTEGER NOT NULL,
+          taskType TEXT NOT NULL,
+          retryCount INTEGER DEFAULT 0,
+          createdAt TEXT NOT NULL,
+          lastAttemptAt TEXT,
+          errorMessage TEXT,
+          FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
+        )
+      ''');
+
+      // Create scheduled_notifications table
+      await db.execute('''
+        CREATE TABLE scheduled_notifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          postId INTEGER NOT NULL,
+          aiPersonaId INTEGER,
+          notificationType TEXT NOT NULL,
+          commentContent TEXT,
+          scheduledTime TEXT NOT NULL,
+          isDelivered INTEGER DEFAULT 0,
+          isRead INTEGER DEFAULT 0,
+          createdAt TEXT NOT NULL,
+          FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE,
+          FOREIGN KEY (aiPersonaId) REFERENCES ai_personas (id) ON DELETE CASCADE
+        )
+      ''');
+    }
   }
 
   Future<void> _createDB(Database db, int version) async {
@@ -276,6 +311,37 @@ class DatabaseHelper {
       CREATE TABLE tag_settings (
         tag TEXT PRIMARY KEY,
         customName TEXT NOT NULL
+      )
+    ''');
+
+    // AI Tasks table for queue-based AI processing
+    await db.execute('''
+      CREATE TABLE ai_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        postId INTEGER NOT NULL,
+        taskType TEXT NOT NULL,
+        retryCount INTEGER DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        lastAttemptAt TEXT,
+        errorMessage TEXT,
+        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
+      )
+    ''');
+
+    // Scheduled Notifications table
+    await db.execute('''
+      CREATE TABLE scheduled_notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        postId INTEGER NOT NULL,
+        aiPersonaId INTEGER,
+        notificationType TEXT NOT NULL,
+        commentContent TEXT,
+        scheduledTime TEXT NOT NULL,
+        isDelivered INTEGER DEFAULT 0,
+        isRead INTEGER DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE,
+        FOREIGN KEY (aiPersonaId) REFERENCES ai_personas (id) ON DELETE CASCADE
       )
     ''');
 
@@ -574,6 +640,114 @@ class DatabaseHelper {
     );
   }
 
+  // ========== AI Tasks ==========
+  Future<int> createAiTask(AiTask task) async {
+    final db = await database;
+    return await db.insert('ai_tasks', task.toMap());
+  }
+
+  Future<List<AiTask>> getPendingAiTasks({int limit = 3}) async {
+    final db = await database;
+    final result = await db.query(
+      'ai_tasks',
+      where: 'retryCount < 5',
+      orderBy: 'createdAt ASC',
+      limit: limit,
+    );
+    return result.map((map) => AiTask.fromMap(map)).toList();
+  }
+
+  Future<int> updateAiTask(AiTask task) async {
+    final db = await database;
+    return await db.update(
+      'ai_tasks',
+      task.toMap(),
+      where: 'id = ?',
+      whereArgs: [task.id],
+    );
+  }
+
+  Future<int> deleteAiTask(int id) async {
+    final db = await database;
+    return await db.delete(
+      'ai_tasks',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // ========== Scheduled Notifications ==========
+  Future<int> createScheduledNotification(ScheduledNotification notification) async {
+    final db = await database;
+    return await db.insert('scheduled_notifications', notification.toMap());
+  }
+
+  Future<List<ScheduledNotification>> getScheduledNotifications({bool? isDelivered}) async {
+    final db = await database;
+    final result = await db.query(
+      'scheduled_notifications',
+      where: isDelivered != null ? 'isDelivered = ?' : null,
+      whereArgs: isDelivered != null ? [isDelivered ? 1 : 0] : null,
+      orderBy: 'scheduledTime ASC',
+    );
+    return result.map((map) => ScheduledNotification.fromMap(map)).toList();
+  }
+
+  Future<ScheduledNotification?> getScheduledNotification(int id) async {
+    final db = await database;
+    final result = await db.query(
+      'scheduled_notifications',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (result.isEmpty) return null;
+    return ScheduledNotification.fromMap(result.first);
+  }
+
+  Future<int> updateScheduledNotification(ScheduledNotification notification) async {
+    final db = await database;
+    return await db.update(
+      'scheduled_notifications',
+      notification.toMap(),
+      where: 'id = ?',
+      whereArgs: [notification.id],
+    );
+  }
+
+  Future<int> deleteScheduledNotification(int id) async {
+    final db = await database;
+    return await db.delete(
+      'scheduled_notifications',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM scheduled_notifications WHERE isDelivered = 1 AND isRead = 0',
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<int> markNotificationsAsRead(List<int> ids) async {
+    final db = await database;
+    if (ids.isEmpty) return 0;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    return await db.rawUpdate(
+      'UPDATE scheduled_notifications SET isRead = 1 WHERE id IN ($placeholders)',
+      ids,
+    );
+  }
+
+  Future<int> markAllNotificationsAsRead() async {
+    final db = await database;
+    return await db.rawUpdate(
+      'UPDATE scheduled_notifications SET isRead = 1 WHERE isDelivered = 1 AND isRead = 0',
+    );
+  }
+
   // ========== Utility ==========
   Future<void> close() async {
     final db = await database;
@@ -635,6 +809,22 @@ class DatabaseHelper {
     print('========== TAG SETTINGS (${tagSettings.length}) ==========');
     for (var setting in tagSettings) {
       print(setting);
+    }
+    print('');
+
+    // AI Tasks
+    final aiTasks = await db.query('ai_tasks');
+    print('========== AI TASKS (${aiTasks.length}) ==========');
+    for (var task in aiTasks) {
+      print(task);
+    }
+    print('');
+
+    // Scheduled Notifications
+    final scheduledNotifications = await db.query('scheduled_notifications');
+    print('========== SCHEDULED NOTIFICATIONS (${scheduledNotifications.length}) ==========');
+    for (var notification in scheduledNotifications) {
+      print(notification);
     }
     print('');
 

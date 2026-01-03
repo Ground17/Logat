@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'screens/feed_screen.dart';
 import 'screens/terms_agreement_screen.dart';
 import 'services/settings_service.dart';
+import 'services/notification_scheduler_service.dart';
+import 'services/ai_task_queue_service.dart';
 import 'utils/media_migration.dart';
 
 void main() {
@@ -52,6 +54,15 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkFirstTime() async {
+    // Initialize notification system FIRST
+    await NotificationSchedulerService.instance.initialize();
+
+    // Process pending AI tasks (3 in parallel)
+    await AiTaskQueueService.instance.processPendingTasks();
+
+    // Process any overdue notifications
+    await NotificationSchedulerService.instance.processOverdueNotifications();
+
     // Check and migrate media files to permanent storage
     await MediaMigration.logMediaStats();
     await MediaMigration.checkAndMigratePostMedia();
@@ -61,9 +72,9 @@ class _SplashScreenState extends State<SplashScreen> {
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (context) =>
-              isFirstTime ? const TermsAgreementScreen() : const FeedScreen(),
-        ),
+            builder: (context) =>
+                /* isFirstTime ? */ const TermsAgreementScreen() // : const FeedScreen(),
+            ),
       );
     }
   }

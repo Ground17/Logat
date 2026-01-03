@@ -9,11 +9,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:location/location.dart';
 import 'package:intl/intl.dart';
 import 'package:video_player/video_player.dart';
+import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import '../models/comment.dart';
 import '../models/like.dart';
 import '../models/post.dart';
 import '../database/database_helper.dart';
 import '../services/ai_service.dart';
+import '../services/ai_task_queue_service.dart';
 import '../widgets/video_player_widget.dart';
 import '../widgets/video_thumbnail_widget.dart';
 import '../services/settings_service.dart';
@@ -23,7 +25,12 @@ import 'location_picker_screen.dart';
 import '../key.dart';
 
 class CreatePostScreen extends StatefulWidget {
-  const CreatePostScreen({Key? key}) : super(key: key);
+  final List<String>? initialMediaPaths;
+
+  const CreatePostScreen({
+    Key? key,
+    this.initialMediaPaths,
+  }) : super(key: key);
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -50,6 +57,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   void initState() {
     super.initState();
     _loadDefaultSettings();
+
+    // Handle initial media paths from shared intent
+    if (widget.initialMediaPaths != null && widget.initialMediaPaths!.isNotEmpty) {
+      _copySharedFilesToDocuments(widget.initialMediaPaths!);
+    }
   }
 
   Future<void> _loadDefaultSettings() async {
@@ -57,6 +69,54 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() {
       _enableAiReactions = settings.enableAiReactions;
     });
+  }
+
+  Future<void> _copySharedFilesToDocuments(List<String> sharedPaths) async {
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final copiedPaths = <String>[];
+
+      for (final sharedPath in sharedPaths) {
+        try {
+          final sourceFile = File(sharedPath);
+          if (!await sourceFile.exists()) {
+            print('⚠️ Shared file not found: $sharedPath');
+            continue;
+          }
+
+          // Generate unique filename
+          final timestamp = DateTime.now().millisecondsSinceEpoch;
+          final extension = sharedPath.split('.').last;
+          final fileName = 'shared_${timestamp}_${copiedPaths.length}.$extension';
+          final destPath = '${appDir.path}/$fileName';
+
+          // Copy file to Documents directory
+          await sourceFile.copy(destPath);
+          copiedPaths.add(destPath);
+          print('📸 Copied shared file to Documents: $destPath');
+        } catch (e) {
+          print('❌ Failed to copy shared file: $e');
+        }
+      }
+
+      if (copiedPaths.isNotEmpty && mounted) {
+        setState(() {
+          _mediaPaths.addAll(copiedPaths);
+        });
+
+        print('📸 Initialized with ${copiedPaths.length} shared files');
+
+        // Extract location and date from first media file
+        await _extractLocationFromImage(copiedPaths.first);
+      }
+    } catch (e) {
+      print('❌ Error copying shared files: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load shared files: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -645,14 +705,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             continue;
           }
 
-          final timestamp = DateTime.now().millisecondsSinceEpoch;
-          final extension = tempPath.split('.').last;
-          final fileName = 'post_${timestamp}_$i.$extension';
-          final permanentPath = '${appDir.path}/$fileName';
+          // Check if file is already in Documents directory
+          if (tempPath.startsWith(appDir.path)) {
+            // File is already in Documents, no need to copy
+            permanentPaths.add(tempPath);
+            print('✓ File already in Documents: $tempPath');
+          } else {
+            // File is in temporary location, copy to Documents
+            final timestamp = DateTime.now().millisecondsSinceEpoch;
+            final extension = tempPath.split('.').last;
+            final fileName = 'post_${timestamp}_$i.$extension';
+            final permanentPath = '${appDir.path}/$fileName';
 
-          await File(tempPath).copy(permanentPath);
-          permanentPaths.add(permanentPath);
-          print('📸 Copied to permanent storage: $permanentPath');
+            await File(tempPath).copy(permanentPath);
+            permanentPaths.add(permanentPath);
+            print('📸 Copied to permanent storage: $permanentPath');
+          }
         } catch (e) {
           print('❌ Failed to copy media: $e');
         }
@@ -682,7 +750,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       ));
 
       if (createdPost != null && _enableAiReactions) {
-        _generateAiReactions(createdPost);
+        await _enqueueAiReactionTask(createdPost);
       }
 
       if (mounted) {
@@ -704,51 +772,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
-  Future<void> _generateAiReactions(Post post) async {
-    final settings = await SettingsService.loadSettings();
-    final personas = await _db.getAllPersonas();
-    final enabledPersonas = personas
-        .where((p) => settings.enabledPersonaIds.contains(p.id))
-        .toList();
-
-    final random = Random();
-
-    for (var persona in enabledPersonas) {
-      // Use persona-specific like probability
-      final shouldLike = random.nextDouble() < persona.likeProbability;
-
-      if (shouldLike) {
-        final likeDecision = await AiService.shouldLikePost(
-          persona: persona,
-          post: post,
-          userProfile: settings.userProfile,
-        );
-
-        if (likeDecision) {
-          await _db.createLike(Like(
-            postId: post.id!,
-            aiPersonaId: persona.id!,
-          ));
-        }
-      }
-
-      // Use persona-specific comment probability
-      if (random.nextDouble() < persona.commentProbability) {
-        final comment = await AiService.generateComment(
-          persona: persona,
-          post: post,
-          userProfile: settings.userProfile,
-        );
-
-        await _db.createComment(Comment(
-          postId: post.id!,
-          aiPersonaId: persona.id!,
-          content: comment,
-        ));
-      }
-
-      await Future.delayed(const Duration(milliseconds: 300));
-    }
+  Future<void> _enqueueAiReactionTask(Post post) async {
+    await AiTaskQueueService.instance.enqueueReactionTask(post.id!);
   }
 
   @override
@@ -793,7 +818,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       ),
                     )
                   else
-                    GridView.builder(
+                    ReorderableGridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate:
@@ -803,12 +828,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         mainAxisSpacing: 8,
                       ),
                       itemCount: _mediaPaths.length,
+                      onReorder: (oldIndex, newIndex) {
+                        setState(() {
+                          final item = _mediaPaths.removeAt(oldIndex);
+                          _mediaPaths.insert(newIndex, item);
+                        });
+                      },
                       itemBuilder: (context, index) {
                         final path = _mediaPaths[index];
                         final isVideo = path.toLowerCase().endsWith('.mp4') ||
                             path.toLowerCase().endsWith('.mov');
 
                         return Stack(
+                          key: ValueKey(path),
                           children: [
                             GestureDetector(
                               onTap: isVideo

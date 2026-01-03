@@ -9,10 +9,12 @@ import 'edit_persona_screen.dart';
 class PersonaManagementScreen extends StatefulWidget {
   final int? initialPersonaId;
 
-  const PersonaManagementScreen({Key? key, this.initialPersonaId}) : super(key: key);
+  const PersonaManagementScreen({Key? key, this.initialPersonaId})
+      : super(key: key);
 
   @override
-  State<PersonaManagementScreen> createState() => _PersonaManagementScreenState();
+  State<PersonaManagementScreen> createState() =>
+      _PersonaManagementScreenState();
 }
 
 class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
@@ -139,15 +141,20 @@ class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
                 // Description
                 Container(
                   padding: const EdgeInsets.all(16),
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHighest
+                      .withValues(alpha: 0.3),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, size: 20, color: Colors.grey[600]),
+                      Icon(Icons.info_outline,
+                          size: 20, color: Colors.grey[600]),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           'Enable or disable AI personas. Only enabled personas will interact with your posts.',
-                          style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                          style:
+                              TextStyle(fontSize: 13, color: Colors.grey[600]),
                         ),
                       ),
                     ],
@@ -159,7 +166,8 @@ class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
                     itemCount: _personas.length,
                     itemBuilder: (context, index) {
                       final persona = _personas[index];
-                      final isEnabled = _selectedPersonaIds.contains(persona.id);
+                      final isEnabled =
+                          _selectedPersonaIds.contains(persona.id);
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         child: Column(
@@ -180,7 +188,28 @@ class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
                                 avatar: persona.avatar,
                                 radius: 20,
                               ),
-                              title: Text(persona.name),
+                              title: Row(
+                                children: [
+                                  Text(persona.name),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'AI',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -203,29 +232,37 @@ class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
                                           const SizedBox(width: 4),
                                           Text(
                                             persona.aiModel.displayName,
-                                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey),
                                           ),
                                         ],
                                       ),
                                       Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Icon(Icons.comment, size: 14, color: Colors.grey),
+                                          const Icon(Icons.comment,
+                                              size: 14, color: Colors.grey),
                                           const SizedBox(width: 4),
                                           Text(
                                             '${(persona.commentProbability * 100).toInt()}%',
-                                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey),
                                           ),
                                         ],
                                       ),
                                       Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Icon(Icons.favorite, size: 14, color: Colors.grey),
+                                          const Icon(Icons.favorite,
+                                              size: 14, color: Colors.grey),
                                           const SizedBox(width: 4),
                                           Text(
                                             '${(persona.likeProbability * 100).toInt()}%',
-                                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey),
                                           ),
                                         ],
                                       ),
@@ -236,7 +273,8 @@ class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
                             ),
                             // Edit and Delete buttons
                             Padding(
-                              padding: const EdgeInsets.only(left: 72, right: 16, bottom: 8),
+                              padding: const EdgeInsets.only(
+                                  left: 72, right: 16, bottom: 8),
                               child: Row(
                                 children: [
                                   TextButton.icon(
@@ -246,7 +284,9 @@ class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
                                       await Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) => EditPersonaScreen(persona: persona),
+                                          builder: (context) =>
+                                              EditPersonaScreen(
+                                                  persona: persona),
                                         ),
                                       );
                                       _loadPersonas();
@@ -256,7 +296,8 @@ class _PersonaManagementScreenState extends State<PersonaManagementScreen> {
                                   TextButton.icon(
                                     icon: const Icon(Icons.delete, size: 18),
                                     label: const Text('Delete'),
-                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    style: TextButton.styleFrom(
+                                        foregroundColor: Colors.red),
                                     onPressed: () => _deletePersona(persona),
                                   ),
                                 ],
