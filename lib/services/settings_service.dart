@@ -9,6 +9,7 @@ class SettingsService {
   static const String _keyUserProfile = 'user_profile';
   static const String _keyEnableAiReactions = 'enable_ai_reactions';
   static const String _keyPreferredImageModel = 'preferred_image_model';
+  static const String _keyProfileImagePath = 'profile_image_path';
 
   static Future<AppSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -31,6 +32,7 @@ class SettingsService {
     final userProfile = prefs.getString(_keyUserProfile) ?? '';
     final enableAiReactions = prefs.getBool(_keyEnableAiReactions) ?? true;
     final preferredImageModel = AiImageModel.values[prefs.getInt(_keyPreferredImageModel) ?? 0];
+    final profileImagePath = prefs.getString(_keyProfileImagePath) ?? '';
 
     return AppSettings(
       enabledPersonaIds: enabledPersonaIds,
@@ -40,6 +42,7 @@ class SettingsService {
       userProfile: userProfile,
       enableAiReactions: enableAiReactions,
       preferredImageModel: preferredImageModel,
+      profileImagePath: profileImagePath,
     );
   }
 
@@ -56,6 +59,7 @@ class SettingsService {
     await prefs.setString(_keyUserProfile, settings.userProfile);
     await prefs.setBool(_keyEnableAiReactions, settings.enableAiReactions);
     await prefs.setInt(_keyPreferredImageModel, settings.preferredImageModel.index);
+    await prefs.setString(_keyProfileImagePath, settings.profileImagePath);
   }
 
   static Future<bool> isFirstTime() async {

@@ -128,7 +128,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                         TextSpan(
                           text: 'Terms of Use',
                           style: TextStyle(
-                            color: Theme.of(context).primaryColor,
+                            color: Theme.of(context).colorScheme.primary,
                             decoration: TextDecoration.underline,
                             fontWeight: FontWeight.w500,
                           ),
@@ -163,7 +163,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                         TextSpan(
                           text: 'Privacy Policy',
                           style: TextStyle(
-                            color: Theme.of(context).primaryColor,
+                            color: Theme.of(context).colorScheme.primary,
                             decoration: TextDecoration.underline,
                             fontWeight: FontWeight.w500,
                           ),

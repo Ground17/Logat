@@ -1,16 +1,56 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:path_provider/path_provider.dart';
 import '../database/database_helper.dart';
 import '../models/scheduled_notification.dart';
 import '../models/like.dart';
 import '../models/comment.dart';
+import '../main.dart';
+import '../screens/post_detail_screen.dart';
+
+/// Top-level function for background notification handling
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) async {
+  print('📱 Background notification tapped: ${response.payload}');
+
+  // Deliver the notification and navigate to post
+  if (response.payload != null) {
+    final notificationId = int.tryParse(response.payload!);
+    if (notificationId != null) {
+      // Don't show notification again when tapping existing notification
+      await NotificationSchedulerService.instance
+          .deliverNotification(notificationId, showNotification: false);
+
+      // Get the notification to find the post
+      final notification = await DatabaseHelper.instance
+          .getScheduledNotification(notificationId);
+      if (notification != null) {
+        final post = await DatabaseHelper.instance.getPost(notification.postId);
+        if (post != null && navigatorKey.currentContext != null) {
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(
+              builder: (context) => PostDetailScreen(post: post),
+            ),
+          );
+        }
+      }
+    }
+  }
+}
 
 class NotificationSchedulerService {
-  static final NotificationSchedulerService instance = NotificationSchedulerService._init();
+  static final NotificationSchedulerService instance =
+      NotificationSchedulerService._init();
 
-  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  Timer? _periodicTimer;
 
   NotificationSchedulerService._init();
 
@@ -27,7 +67,8 @@ class NotificationSchedulerService {
     tz.initializeTimeZones();
 
     // Initialize notification plugin
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -42,6 +83,7 @@ class NotificationSchedulerService {
     await _notifications.initialize(
       initSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
     // Request permissions
@@ -50,8 +92,28 @@ class NotificationSchedulerService {
     // Schedule any pending notifications
     await _schedulePendingNotifications();
 
+    // Start periodic check for overdue notifications (every 30 seconds)
+    _startPeriodicCheck();
+
     _initialized = true;
     print('✅ NotificationSchedulerService initialized');
+  }
+
+  /// Start periodic check for overdue notifications
+  void _startPeriodicCheck() {
+    _periodicTimer?.cancel();
+    // Check every 10 seconds for debugging, change to 60 for production
+    _periodicTimer = Timer.periodic(
+        const Duration(seconds: kDebugMode ? 10 : 60), (timer) async {
+      await processOverdueNotifications();
+    });
+    print('⏰ Started periodic notification check (every 10 seconds)');
+  }
+
+  /// Stop periodic check
+  void dispose() {
+    _periodicTimer?.cancel();
+    _periodicTimer = null;
   }
 
   /// Request notification permissions
@@ -78,7 +140,30 @@ class NotificationSchedulerService {
   /// Handle notification tap
   Future<void> _onNotificationTapped(NotificationResponse response) async {
     print('📱 Notification tapped: ${response.payload}');
-    // The app will handle navigation through the notification management screen
+
+    // Deliver the notification and navigate to post
+    if (response.payload != null) {
+      final notificationId = int.tryParse(response.payload!);
+      if (notificationId != null) {
+        // Don't show notification again when tapping existing notification
+        await deliverNotification(notificationId, showNotification: false);
+
+        // Get the notification to find the post
+        final notification = await DatabaseHelper.instance
+            .getScheduledNotification(notificationId);
+        if (notification != null) {
+          final post =
+              await DatabaseHelper.instance.getPost(notification.postId);
+          if (post != null && navigatorKey.currentContext != null) {
+            navigatorKey.currentState?.push(
+              MaterialPageRoute(
+                builder: (context) => PostDetailScreen(post: post),
+              ),
+            );
+          }
+        }
+      }
+    }
   }
 
   /// Schedule all pending notifications
@@ -86,7 +171,8 @@ class NotificationSchedulerService {
     final pendingNotifications = await DatabaseHelper.instance
         .getScheduledNotifications(isDelivered: false);
 
-    print('📅 Scheduling ${pendingNotifications.length} pending notifications...');
+    print(
+        '📅 Scheduling ${pendingNotifications.length} pending notifications...');
 
     for (final notification in pendingNotifications) {
       await scheduleNotification(notification);
@@ -97,24 +183,31 @@ class NotificationSchedulerService {
 
   /// Schedule a notification
   Future<void> scheduleNotification(ScheduledNotification notification) async {
+    print('📅 scheduleNotification called for notification ${notification.id}');
+
     if (notification.id == null) {
       print('⚠️ Cannot schedule notification without ID');
       return;
     }
 
-    // Check if scheduled time is in the past
-    if (notification.scheduledTime.isBefore(DateTime.now())) {
+    final now = DateTime.now();
+    // Check if scheduled time is in the past (with 1 second buffer)
+    if (notification.scheduledTime.isBefore(now.subtract(const Duration(seconds: 1)))) {
       // Deliver immediately if time has passed
+      print('⏰ Notification ${notification.id} is overdue, delivering immediately');
       await deliverNotification(notification.id!);
       return;
     }
+
+    print('⏰ Scheduling notification ${notification.id} for ${notification.scheduledTime}');
 
     // Get persona details
     String title = 'New notification';
     String body = '';
 
     if (notification.aiPersonaId != null) {
-      final persona = await DatabaseHelper.instance.getPersona(notification.aiPersonaId!);
+      final persona =
+          await DatabaseHelper.instance.getPersona(notification.aiPersonaId!);
       if (persona != null) {
         if (notification.notificationType == 'like') {
           title = '${persona.name} liked your post';
@@ -124,6 +217,71 @@ class NotificationSchedulerService {
           body = notification.commentContent ?? 'New comment on your post';
         }
       }
+    }
+
+    // Get AI persona avatar image if available
+    String? largeIconPath;
+    String? attachmentPath;
+    try {
+      if (notification.aiPersonaId != null) {
+        final persona = await DatabaseHelper.instance.getPersona(notification.aiPersonaId!);
+        if (persona != null) {
+          final avatarText = persona.avatar;
+          print('📸 AI persona avatar: "$avatarText"');
+
+          // Check if avatar is an image file (not emoji)
+          if (avatarText.isNotEmpty &&
+              !avatarText.contains('/') &&
+              (avatarText.endsWith('.png') ||
+               avatarText.endsWith('.jpg') ||
+               avatarText.endsWith('.jpeg') ||
+               avatarText.endsWith('.webp'))) {
+            // Combine Documents directory with filename
+            final appDir = await getApplicationDocumentsDirectory();
+            final fullPath = '${appDir.path}/$avatarText';
+            print('📁 Full avatar image path: $fullPath');
+
+            final file = File(fullPath);
+            final exists = await file.exists();
+            print('📂 File exists: $exists');
+
+            if (exists) {
+              final fileSize = await file.length();
+              print('📏 File size: ${fileSize / 1024} KB');
+
+              if (fileSize > 10 * 1024 * 1024) {
+                print('⚠️ File too large for iOS notification (>10MB)');
+              } else {
+                largeIconPath = fullPath;
+                attachmentPath = fullPath;
+                print('✅ Using AI persona avatar for notification: $fullPath');
+              }
+            } else {
+              print('⚠️ Avatar image file not found at: $fullPath');
+            }
+          } else if (avatarText.contains('/')) {
+            // Already a full path
+            final file = File(avatarText);
+            final exists = await file.exists();
+            print('📂 File exists at full path: $exists');
+
+            if (exists) {
+              final fileSize = await file.length();
+              print('📏 File size: ${fileSize / 1024} KB');
+
+              if (fileSize <= 10 * 1024 * 1024) {
+                largeIconPath = avatarText;
+                attachmentPath = avatarText;
+                print('✅ Using AI persona avatar (full path) for notification');
+              }
+            }
+          } else {
+            print('ℹ️ Avatar is emoji, not using for notification icon');
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Could not load AI persona avatar: $e');
     }
 
     // Schedule the notification
@@ -137,30 +295,47 @@ class NotificationSchedulerService {
       title,
       body,
       tzScheduledTime,
-      const NotificationDetails(
+      NotificationDetails(
         android: AndroidNotificationDetails(
           'ai_reactions_channel',
           'AI Reactions',
           channelDescription: 'Notifications for AI likes and comments',
           importance: Importance.high,
           priority: Priority.high,
+          // Show notifications even when app is in foreground
+          playSound: true,
+          enableVibration: true,
+          largeIcon: largeIconPath != null
+              ? FilePathAndroidBitmap(largeIconPath)
+              : null,
         ),
         iOS: DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
+          attachments: attachmentPath != null
+              ? [
+                  DarwinNotificationAttachment(
+                    attachmentPath,
+                    identifier: 'profile_image',
+                    hideThumbnail: false,
+                  )
+                ]
+              : null,
         ),
       ),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       payload: notification.id.toString(),
     );
 
-    print('📅 Scheduled notification ${notification.id} for ${notification.scheduledTime}');
+    print(
+        '📅 Scheduled notification ${notification.id} for ${notification.scheduledTime}');
   }
 
   /// Deliver a notification (create actual Like/Comment in database)
-  Future<void> deliverNotification(int notificationId) async {
-    final notification = await DatabaseHelper.instance.getScheduledNotification(notificationId);
+  Future<void> deliverNotification(int notificationId, {bool showNotification = true}) async {
+    final notification =
+        await DatabaseHelper.instance.getScheduledNotification(notificationId);
 
     if (notification == null) {
       print('⚠️ Notification $notificationId not found');
@@ -172,9 +347,130 @@ class NotificationSchedulerService {
       return;
     }
 
-    print('📬 Delivering notification $notificationId...');
+    print('📬 Delivering notification $notificationId (showNotification: $showNotification)...');
 
     try {
+      // Show system notification if requested
+      if (showNotification) {
+        // Get persona details for notification
+        String title = 'New notification';
+        String body = '';
+
+        if (notification.aiPersonaId != null) {
+          final persona =
+              await DatabaseHelper.instance.getPersona(notification.aiPersonaId!);
+          if (persona != null) {
+            if (notification.notificationType == 'like') {
+              title = '${persona.name} liked your post';
+              body = 'Check out who liked your post!';
+            } else if (notification.notificationType == 'comment') {
+              title = '${persona.name} commented on your post';
+              body = notification.commentContent ?? 'New comment on your post';
+            }
+          }
+        }
+
+        // Get AI persona avatar image if available
+        String? largeIconPath;
+        String? attachmentPath;
+        try {
+          if (notification.aiPersonaId != null) {
+            final personaForImage = await DatabaseHelper.instance.getPersona(notification.aiPersonaId!);
+            if (personaForImage != null) {
+              final avatarText = personaForImage.avatar;
+              print('📸 [Immediate] AI persona avatar: "$avatarText"');
+
+              // Check if avatar is an image file (not emoji)
+              if (avatarText.isNotEmpty &&
+                  !avatarText.contains('/') &&
+                  (avatarText.endsWith('.png') ||
+                   avatarText.endsWith('.jpg') ||
+                   avatarText.endsWith('.jpeg') ||
+                   avatarText.endsWith('.webp'))) {
+                // Combine Documents directory with filename
+                final appDir = await getApplicationDocumentsDirectory();
+                final fullPath = '${appDir.path}/$avatarText';
+                print('📁 [Immediate] Full avatar image path: $fullPath');
+
+                final file = File(fullPath);
+                final exists = await file.exists();
+                print('📂 [Immediate] File exists: $exists');
+
+                if (exists) {
+                  final fileSize = await file.length();
+                  print('📏 [Immediate] File size: ${fileSize / 1024} KB');
+
+                  if (fileSize <= 10 * 1024 * 1024) {
+                    largeIconPath = fullPath;
+                    attachmentPath = fullPath;
+                    print('✅ [Immediate] Using AI persona avatar for notification');
+                  }
+                } else {
+                  print('⚠️ [Immediate] Avatar image file not found');
+                }
+              } else if (avatarText.contains('/')) {
+                // Already a full path
+                final file = File(avatarText);
+                final exists = await file.exists();
+                print('📂 [Immediate] File exists at full path: $exists');
+
+                if (exists) {
+                  final fileSize = await file.length();
+                  print('📏 [Immediate] File size: ${fileSize / 1024} KB');
+
+                  if (fileSize <= 10 * 1024 * 1024) {
+                    largeIconPath = avatarText;
+                    attachmentPath = avatarText;
+                    print('✅ [Immediate] Using AI persona avatar (full path) for notification');
+                  }
+                }
+              } else {
+                print('ℹ️ [Immediate] Avatar is emoji, not using for notification icon');
+              }
+            }
+          }
+        } catch (e) {
+          print('❌ Could not load AI persona avatar for immediate notification: $e');
+        }
+
+        // Show immediate notification
+        await _notifications.show(
+          notificationId,
+          title,
+          body,
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              'ai_reactions_channel',
+              'AI Reactions',
+              channelDescription: 'Notifications for AI likes and comments',
+              importance: Importance.high,
+              priority: Priority.high,
+              playSound: true,
+              enableVibration: true,
+              largeIcon: largeIconPath != null
+                  ? FilePathAndroidBitmap(largeIconPath)
+                  : null,
+            ),
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentBadge: true,
+              presentSound: true,
+              attachments: attachmentPath != null
+                  ? [
+                      DarwinNotificationAttachment(
+                        attachmentPath,
+                        identifier: 'profile_image',
+                        hideThumbnail: false,
+                      )
+                    ]
+                  : null,
+            ),
+          ),
+          payload: notificationId.toString(),
+        );
+        print('🔔 Showed immediate notification');
+      }
+
       // Create the actual Like or Comment in database
       if (notification.notificationType == 'like') {
         final like = Like(
@@ -199,7 +495,8 @@ class NotificationSchedulerService {
 
       // Mark notification as delivered
       final updatedNotification = notification.copyWith(isDelivered: true);
-      await DatabaseHelper.instance.updateScheduledNotification(updatedNotification);
+      await DatabaseHelper.instance
+          .updateScheduledNotification(updatedNotification);
 
       print('✅ Notification $notificationId delivered successfully');
     } catch (e) {
@@ -208,8 +505,10 @@ class NotificationSchedulerService {
   }
 
   /// Reschedule a notification to a new time
-  Future<void> rescheduleNotification(int notificationId, DateTime newTime) async {
-    final notification = await DatabaseHelper.instance.getScheduledNotification(notificationId);
+  Future<void> rescheduleNotification(
+      int notificationId, DateTime newTime) async {
+    final notification =
+        await DatabaseHelper.instance.getScheduledNotification(notificationId);
 
     if (notification == null) {
       print('⚠️ Notification $notificationId not found');
@@ -226,7 +525,8 @@ class NotificationSchedulerService {
 
     // Update scheduled time in database
     final updatedNotification = notification.copyWith(scheduledTime: newTime);
-    await DatabaseHelper.instance.updateScheduledNotification(updatedNotification);
+    await DatabaseHelper.instance
+        .updateScheduledNotification(updatedNotification);
 
     // Schedule with new time
     await scheduleNotification(updatedNotification);
@@ -266,7 +566,14 @@ class NotificationSchedulerService {
         .getScheduledNotifications(isDelivered: false);
 
     final now = DateTime.now();
-    final overdue = allPending.where((n) => n.scheduledTime.isBefore(now)).toList();
+    print('🔍 Checking overdue notifications: ${allPending.length} pending, current time: $now');
+
+    for (final n in allPending) {
+      print('   - Notification ${n.id}: scheduled for ${n.scheduledTime}, overdue: ${n.scheduledTime.isBefore(now)}');
+    }
+
+    final overdue =
+        allPending.where((n) => n.scheduledTime.isBefore(now.subtract(const Duration(seconds: 1)))).toList();
 
     if (overdue.isEmpty) {
       print('ℹ️ No overdue notifications to process');
@@ -275,9 +582,11 @@ class NotificationSchedulerService {
 
     print('⏰ Processing ${overdue.length} overdue notifications...');
 
-    for (final notification in overdue) {
-      await deliverNotification(notification.id!);
-    }
+    // Process all overdue notifications in parallel for speed
+    // showNotification: true because user missed these notifications
+    await Future.wait(
+      overdue.map((notification) => deliverNotification(notification.id!, showNotification: true)),
+    );
 
     print('✅ Processed ${overdue.length} overdue notifications');
   }

@@ -6,19 +6,23 @@ import '../database/database_helper.dart';
 import '../models/scheduled_notification.dart';
 import '../models/ai_persona.dart';
 import '../services/notification_scheduler_service.dart';
+import 'post_detail_screen.dart';
 
 class NotificationManagementScreen extends StatefulWidget {
   const NotificationManagementScreen({Key? key}) : super(key: key);
 
   @override
-  State<NotificationManagementScreen> createState() => _NotificationManagementScreenState();
+  State<NotificationManagementScreen> createState() =>
+      _NotificationManagementScreenState();
 }
 
-class _NotificationManagementScreenState extends State<NotificationManagementScreen> {
+class _NotificationManagementScreenState
+    extends State<NotificationManagementScreen> {
   List<ScheduledNotification> _pendingNotifications = [];
   List<ScheduledNotification> _deliveredNotifications = [];
   final Map<int, AiPersona?> _personaCache = {};
   bool _isLoading = true;
+  int _deliveredDisplayLimit = 10; // Show 10 delivered notifications initially
 
   @override
   void initState() {
@@ -31,11 +35,14 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
 
     try {
       // Load all scheduled notifications
-      final allNotifications = await DatabaseHelper.instance.getScheduledNotifications();
+      final allNotifications =
+          await DatabaseHelper.instance.getScheduledNotifications();
 
-      // Separate pending and delivered
-      final pending = allNotifications.where((n) => !n.isDelivered).toList();
-      final delivered = allNotifications.where((n) => n.isDelivered).toList();
+      // Separate pending and delivered, sort by latest first
+      final pending = allNotifications.where((n) => !n.isDelivered).toList()
+        ..sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
+      final delivered = allNotifications.where((n) => n.isDelivered).toList()
+        ..sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
 
       // Load persona details
       final personaIds = allNotifications
@@ -46,21 +53,15 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
       for (final personaId in personaIds) {
         if (!_personaCache.containsKey(personaId)) {
           final persona = await DatabaseHelper.instance.getPersona(personaId!);
-
-          // Convert avatar filename to full path if needed
-          if (persona != null) {
-            final convertedPersona = await _convertPersonaAvatarPath(persona);
-            _personaCache[personaId] = convertedPersona;
-          } else {
-            _personaCache[personaId] = persona;
-          }
+          _personaCache[personaId] = persona;
         }
       }
 
       // Mark all delivered notifications as read
       final deliveredIds = delivered.map((n) => n.id!).toList();
       if (deliveredIds.isNotEmpty) {
-        await NotificationSchedulerService.instance.markNotificationsAsRead(deliveredIds);
+        await NotificationSchedulerService.instance
+            .markNotificationsAsRead(deliveredIds);
       }
 
       setState(() {
@@ -76,43 +77,6 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
         );
       }
     }
-  }
-
-  /// Convert persona avatar filename to full path if needed
-  Future<AiPersona> _convertPersonaAvatarPath(AiPersona persona) async {
-    final avatarText = persona.avatar;
-    print('🔍 Converting avatar for ${persona.name}: $avatarText');
-
-    // Check if it's a filename (has image extension but no path separator)
-    if (avatarText.isNotEmpty &&
-        !avatarText.contains('/') &&
-        (avatarText.endsWith('.png') ||
-            avatarText.endsWith('.jpg') ||
-            avatarText.endsWith('.jpeg') ||
-            avatarText.endsWith('.webp'))) {
-      try {
-        final appDir = await getApplicationDocumentsDirectory();
-        final fullPath = '${appDir.path}/$avatarText';
-        print('📁 Checking file: $fullPath');
-
-        // Check if file exists at this path
-        final file = File(fullPath);
-        if (await file.exists()) {
-          print('✅ File exists, converting to: $fullPath');
-          // Return persona with converted avatar path
-          return persona.copyWith(avatar: fullPath);
-        } else {
-          print('⚠️ File does not exist: $fullPath');
-        }
-      } catch (e) {
-        print('❌ Error converting persona avatar path: $e');
-      }
-    } else {
-      print('ℹ️ No conversion needed (already path or emoji): $avatarText');
-    }
-
-    // Return original persona if no conversion needed
-    return persona;
   }
 
   Future<void> _editNotificationTime(ScheduledNotification notification) async {
@@ -148,7 +112,8 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Notification rescheduled successfully')),
+          const SnackBar(
+              content: Text('Notification rescheduled successfully')),
         );
         _loadNotifications();
       }
@@ -166,7 +131,8 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Notification'),
-        content: const Text('Are you sure you want to delete this scheduled notification?'),
+        content: const Text(
+            'Are you sure you want to delete this scheduled notification?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -183,7 +149,8 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
     if (confirmed != true || !mounted) return;
 
     try {
-      await NotificationSchedulerService.instance.cancelNotification(notification.id!);
+      await NotificationSchedulerService.instance
+          .cancelNotification(notification.id!);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -200,7 +167,27 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
     }
   }
 
-  Widget _buildNotificationCard(ScheduledNotification notification, {required bool isPending}) {
+  Future<String> _getAvatarPath(String avatarText) async {
+    // If already a full path, return as is
+    if (avatarText.contains('/')) {
+      return avatarText;
+    }
+
+    // If it's a filename, combine with Documents directory
+    if (avatarText.endsWith('.png') ||
+        avatarText.endsWith('.jpg') ||
+        avatarText.endsWith('.jpeg') ||
+        avatarText.endsWith('.webp')) {
+      final appDir = await getApplicationDocumentsDirectory();
+      return '${appDir.path}/$avatarText';
+    }
+
+    // Otherwise, it's an emoji
+    return avatarText;
+  }
+
+  Widget _buildNotificationCard(ScheduledNotification notification,
+      {required bool isPending}) {
     final persona = notification.aiPersonaId != null
         ? _personaCache[notification.aiPersonaId!]
         : null;
@@ -224,8 +211,10 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
         ? 'Scheduled for ${dateFormat.format(notification.scheduledTime)}'
         : 'Delivered ${dateFormat.format(notification.scheduledTime)}';
 
-    // Check if avatar is an image path
-    final bool isImagePath = personaAvatar.contains('/') &&
+    // Check if avatar is an image path (filename or full path)
+    final bool isImagePath = (personaAvatar.contains('/') ||
+            !personaAvatar
+                .contains(RegExp(r'[\u{1F300}-\u{1F9FF}]', unicode: true))) &&
         (personaAvatar.endsWith('.png') ||
             personaAvatar.endsWith('.jpg') ||
             personaAvatar.endsWith('.jpeg') ||
@@ -233,11 +222,43 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: isPending ? Colors.grey.shade200 : null,
       child: ListTile(
+        onTap: () async {
+          // Navigate to post detail screen
+          final post =
+              await DatabaseHelper.instance.getPost(notification.postId);
+          if (post != null && mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PostDetailScreen(post: post),
+              ),
+            );
+          }
+        },
         leading: isImagePath
-            ? CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                backgroundImage: FileImage(File(personaAvatar)),
+            ? FutureBuilder<String>(
+                future: _getAvatarPath(personaAvatar),
+                builder: (context, snapshot) {
+                  if (snapshot.hasData) {
+                    final avatarPath = snapshot.data!;
+                    final file = File(avatarPath);
+                    return CircleAvatar(
+                      backgroundColor:
+                          Theme.of(context).colorScheme.primaryContainer,
+                      backgroundImage:
+                          file.existsSync() ? FileImage(file) : null,
+                      child:
+                          !file.existsSync() ? const Icon(Icons.person) : null,
+                    );
+                  }
+                  return CircleAvatar(
+                    backgroundColor:
+                        Theme.of(context).colorScheme.primaryContainer,
+                    child: const CircularProgressIndicator(strokeWidth: 2),
+                  );
+                },
               )
             : CircleAvatar(
                 backgroundColor: Theme.of(context).colorScheme.primaryContainer,
@@ -246,7 +267,12 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
                   style: const TextStyle(fontSize: 24),
                 ),
               ),
-        title: Text(title),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: isPending ? Colors.grey.shade600 : null,
+          ),
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -255,6 +281,9 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
                 subtitle,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isPending ? Colors.grey.shade500 : null,
+                ),
               ),
               const SizedBox(height: 4),
             ],
@@ -262,7 +291,9 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
               timeInfo,
               style: TextStyle(
                 fontSize: 12,
-                color: Theme.of(context).colorScheme.secondary,
+                color: isPending
+                    ? Colors.grey.shade500
+                    : Theme.of(context).colorScheme.secondary,
               ),
             ),
           ],
@@ -314,12 +345,14 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadNotifications,
-              child: _pendingNotifications.isEmpty && _deliveredNotifications.isEmpty
+              child: _pendingNotifications.isEmpty &&
+                      _deliveredNotifications.isEmpty
                   ? const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.notifications_off, size: 64, color: Colors.grey),
+                          Icon(Icons.notifications_off,
+                              size: 64, color: Colors.grey),
                           SizedBox(height: 16),
                           Text(
                             'No notifications',
@@ -330,29 +363,57 @@ class _NotificationManagementScreenState extends State<NotificationManagementScr
                     )
                   : ListView(
                       children: [
-                        if (_pendingNotifications.isNotEmpty) ...[
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                            child: Text(
-                              'Pending (${_pendingNotifications.length})',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                            ),
-                          ),
-                          ..._pendingNotifications.map((n) => _buildNotificationCard(n, isPending: true)),
-                        ],
                         if (_deliveredNotifications.isNotEmpty) ...[
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                             child: Text(
                               'Delivered (${_deliveredNotifications.length})',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
                                     fontWeight: FontWeight.bold,
                                   ),
                             ),
                           ),
-                          ..._deliveredNotifications.map((n) => _buildNotificationCard(n, isPending: false)),
+                          // Show limited delivered notifications
+                          ..._deliveredNotifications
+                              .take(_deliveredDisplayLimit)
+                              .map((n) =>
+                                  _buildNotificationCard(n, isPending: false)),
+                          // Show "Load More" button if there are more notifications
+                          if (_deliveredNotifications.length >
+                              _deliveredDisplayLimit)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _deliveredDisplayLimit += 10;
+                                  });
+                                },
+                                child: Text(
+                                  'Show ${(_deliveredNotifications.length - _deliveredDisplayLimit).clamp(0, 10)} more...',
+                                ),
+                              ),
+                            ),
+                        ],
+                        if (_pendingNotifications.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Text(
+                              'Pending (${_pendingNotifications.length})',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                          ),
+                          ..._pendingNotifications.map((n) =>
+                              _buildNotificationCard(n, isPending: true)),
                         ],
                       ],
                     ),

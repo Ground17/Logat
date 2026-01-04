@@ -11,6 +11,7 @@ class AppSettings {
   final String userProfile; // User's bio/profile for AI context
   final bool enableAiReactions; // Default setting for enabling AI reactions on new posts
   final AiImageModel preferredImageModel; // Preferred AI model for image generation/editing
+  final String profileImagePath; // Profile image filename (stored in Documents directory)
 
   AppSettings({
     required this.enabledPersonaIds,
@@ -20,6 +21,7 @@ class AppSettings {
     this.userProfile = '',
     this.enableAiReactions = true,
     this.preferredImageModel = AiImageModel.openai,
+    this.profileImagePath = '',
   });
 
   factory AppSettings.defaultSettings() {
@@ -31,6 +33,7 @@ class AppSettings {
       userProfile: '',
       enableAiReactions: true,
       preferredImageModel: AiImageModel.openai,
+      profileImagePath: '',
     );
   }
 
@@ -43,6 +46,7 @@ class AppSettings {
       'userProfile': userProfile,
       'enableAiReactions': enableAiReactions ? 1 : 0,
       'preferredImageModel': preferredImageModel.index,
+      'profileImagePath': profileImagePath,
     };
   }
 
@@ -59,6 +63,7 @@ class AppSettings {
       userProfile: map['userProfile'] as String? ?? '',
       enableAiReactions: map['enableAiReactions'] == 1 || map['enableAiReactions'] == null,
       preferredImageModel: AiImageModel.values[map['preferredImageModel'] as int? ?? 0],
+      profileImagePath: map['profileImagePath'] as String? ?? '',
     );
   }
 
@@ -70,6 +75,7 @@ class AppSettings {
     String? userProfile,
     bool? enableAiReactions,
     AiImageModel? preferredImageModel,
+    String? profileImagePath,
   }) {
     return AppSettings(
       enabledPersonaIds: enabledPersonaIds ?? this.enabledPersonaIds,
@@ -79,6 +85,7 @@ class AppSettings {
       userProfile: userProfile ?? this.userProfile,
       enableAiReactions: enableAiReactions ?? this.enableAiReactions,
       preferredImageModel: preferredImageModel ?? this.preferredImageModel,
+      profileImagePath: profileImagePath ?? this.profileImagePath,
     );
   }
 }

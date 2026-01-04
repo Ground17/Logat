@@ -127,7 +127,7 @@ class PersonaCard extends StatelessWidget {
                       persona.role,
                       style: TextStyle(
                         fontSize: 14,
-                        color: Theme.of(context).primaryColor,
+                        color: Theme.of(context).colorScheme.secondary,
                         fontWeight: FontWeight.w500,
                       ),
                     ),

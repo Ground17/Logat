@@ -19,7 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final DatabaseHelper _db = DatabaseHelper.instance;
   List<AiPersona> _allPersonas = [];
   bool _isLoading = true;
-  AiImageModel _preferredImageModel = AiImageModel.openai;
+  AiImageModel _preferredImageModel = AiImageModel.gemini;
 
   @override
   void initState() {
@@ -113,8 +113,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const Divider(height: 1),
                         RadioListTile<AiImageModel>(
-                          title: const Text('OpenAI (GPT Image 1.5)'),
-                          value: AiImageModel.openai,
+                          title:
+                              const Text('Google Gemini 3 Pro Image Preview'),
+                          value: AiImageModel.gemini,
                           groupValue: _preferredImageModel,
                           onChanged: (value) {
                             if (value != null) {
@@ -123,8 +124,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           },
                         ),
                         RadioListTile<AiImageModel>(
-                          title: const Text('Google Gemini'),
-                          value: AiImageModel.gemini,
+                          title: const Text('OpenAI (GPT Image 1.5)'),
+                          value: AiImageModel.openai,
                           groupValue: _preferredImageModel,
                           onChanged: (value) {
                             if (value != null) {

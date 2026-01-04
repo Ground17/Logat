@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
+
 import '../database/database_helper.dart';
 import '../models/ai_task.dart';
 import '../models/ai_persona.dart';
@@ -7,6 +9,7 @@ import '../models/post.dart';
 import '../models/scheduled_notification.dart';
 import '../services/ai_service.dart';
 import '../services/settings_service.dart';
+import '../services/notification_scheduler_service.dart';
 
 class AiTaskQueueService {
   static final AiTaskQueueService instance = AiTaskQueueService._init();
@@ -27,14 +30,16 @@ class AiTaskQueueService {
 
   /// Process pending AI tasks (up to 3 in parallel)
   Future<void> processPendingTasks() async {
-    final pendingTasks = await DatabaseHelper.instance.getPendingAiTasks(limit: 3);
+    final pendingTasks =
+        await DatabaseHelper.instance.getPendingAiTasks(limit: 3);
 
     if (pendingTasks.isEmpty) {
       print('ℹ️ No pending AI tasks to process');
       return;
     }
 
-    print('🔄 Processing ${pendingTasks.length} pending AI tasks in parallel...');
+    print(
+        '🔄 Processing ${pendingTasks.length} pending AI tasks in parallel...');
 
     // Process all tasks in parallel
     await Future.wait(
@@ -47,7 +52,8 @@ class AiTaskQueueService {
   /// Process a single AI task with retry logic
   Future<void> _processTask(AiTask task) async {
     try {
-      print('🤖 Processing task ${task.id} for post ${task.postId} (attempt ${task.retryCount + 1}/5)');
+      print(
+          '🤖 Processing task ${task.id} for post ${task.postId} (attempt ${task.retryCount + 1}/5)');
 
       // Load app settings
       final settings = await SettingsService.loadSettings();
@@ -69,7 +75,8 @@ class AiTaskQueueService {
 
       // Check if AI reactions are disabled for this post
       if (!post.enableAiReactions) {
-        print('⚠️ AI reactions disabled for post ${task.postId}, removing task ${task.id}');
+        print(
+            '⚠️ AI reactions disabled for post ${task.postId}, removing task ${task.id}');
         await DatabaseHelper.instance.deleteAiTask(task.id!);
         return;
       }
@@ -87,12 +94,33 @@ class AiTaskQueueService {
       }
 
       // Process each enabled persona with individual random times
-      for (final persona in enabledPersonas) {
-        // Generate a random time within 24 hours for each persona
-        final randomMinutes = Random().nextInt(24 * 60); // 0 to 1440 minutes (24 hours)
-        final scheduledTime = DateTime.now().add(Duration(minutes: randomMinutes));
+      // Schedule within 24 hours from post creation, or immediately if past 24h
+      final postCreatedAt = post.createdAt;
+      final now = DateTime.now();
+      final maxScheduleTime = postCreatedAt.add(const Duration(hours: 24));
 
-        print('📅 Scheduled time for ${persona.name}: $scheduledTime (in ${randomMinutes ~/ 60}h ${randomMinutes % 60}m)');
+      for (final persona in enabledPersonas) {
+        DateTime scheduledTime;
+
+        if (now.isAfter(maxScheduleTime)) {
+          // Post is older than 24 hours, deliver immediately
+          scheduledTime = now;
+          print(
+              '📅 Post is older than 24h, scheduling ${persona.name} immediately');
+        } else {
+          // Calculate random time between now and 24h after post creation
+          final remainingMinutes = maxScheduleTime.difference(now).inMinutes;
+
+          // DEBUG: Use 3 minutes for testing
+          // PRODUCTION: Use remainingMinutes
+          final randomMinutes = kDebugMode
+              ? Random().nextInt(1.clamp(1, remainingMinutes))
+              : Random().nextInt(remainingMinutes.clamp(1, remainingMinutes));
+          scheduledTime = now.add(Duration(minutes: randomMinutes));
+
+          print(
+              '📅 Scheduled time for ${persona.name}: $scheduledTime (in ${randomMinutes}m, max ${remainingMinutes}m from now)');
+        }
 
         await _processPersonaReaction(
           persona: persona,
@@ -105,7 +133,6 @@ class AiTaskQueueService {
       // Task completed successfully, delete it
       await DatabaseHelper.instance.deleteAiTask(task.id!);
       print('✅ Task ${task.id} completed successfully');
-
     } catch (e, stackTrace) {
       print('❌ Error processing task ${task.id}: $e');
       print('Stack trace: $stackTrace');
@@ -128,7 +155,8 @@ class AiTaskQueueService {
 
         // Calculate exponential backoff delay
         final delayMinutes = _calculateBackoffDelay(newRetryCount);
-        print('⏳ Will retry task ${task.id} in $delayMinutes minutes (attempt ${newRetryCount + 1}/5)');
+        print(
+            '⏳ Will retry task ${task.id} in $delayMinutes minutes (attempt ${newRetryCount + 1}/5)');
       }
     }
   }
@@ -162,7 +190,13 @@ class AiTaskQueueService {
           scheduledTime: scheduledTime,
           createdAt: DateTime.now(),
         );
-        await DatabaseHelper.instance.createScheduledNotification(notification);
+        final notificationId = await DatabaseHelper.instance
+            .createScheduledNotification(notification);
+
+        // Schedule the notification with flutter_local_notifications
+        final createdNotification = notification.copyWith(id: notificationId);
+        await NotificationSchedulerService.instance
+            .scheduleNotification(createdNotification);
         print('👍 Scheduled like from ${persona.name} at $scheduledTime');
       }
     }
@@ -187,7 +221,13 @@ class AiTaskQueueService {
         scheduledTime: scheduledTime,
         createdAt: DateTime.now(),
       );
-      await DatabaseHelper.instance.createScheduledNotification(notification);
+      final notificationId = await DatabaseHelper.instance
+          .createScheduledNotification(notification);
+
+      // Schedule the notification with flutter_local_notifications
+      final createdNotification = notification.copyWith(id: notificationId);
+      await NotificationSchedulerService.instance
+          .scheduleNotification(createdNotification);
       print('💬 Scheduled comment from ${persona.name} at $scheduledTime');
     }
   }
