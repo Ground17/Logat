@@ -261,6 +261,17 @@ final yearlyDailyStatsProvider = FutureProvider<List<DailyStats>>((ref) {
   return ref.watch(diaryRepositoryProvider).dailyStats(start: start, end: end);
 });
 
+// family: (year, month) → LocationCluster 리스트
+final monthlyLocationClustersProvider =
+    FutureProvider.family<List<LocationCluster>, (int, int)>((ref, ym) {
+  final (year, month) = ym;
+  final start = DateTime.utc(year, month, 1);
+  final end = DateTime.utc(year, month + 1, 1);
+  return ref
+      .watch(diaryRepositoryProvider)
+      .locationClustersInRange(start: start, end: end);
+});
+
 // family: (year, month) → DailyStats 리스트
 final monthlyStatsProvider =
     FutureProvider.family<List<DailyStats>, (int, int)>((ref, ym) {

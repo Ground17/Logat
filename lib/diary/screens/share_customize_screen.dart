@@ -368,8 +368,19 @@ class _ShareCustomizeScreenState extends State<ShareCustomizeScreen> {
         // Background
         Container(color: _bgColor),
 
-        // Photos (collage)
-        ..._photos.where((p) => p.bytes != null).map((p) => Positioned(
+        // Photos (collage) — selected photo rendered last (on top)
+        ...() {
+          final selectedIdx = _selected is int ? _selected as int : -1;
+          final ordered = [
+            ..._photos.asMap().entries
+                .where((e) => e.value.bytes != null && e.key != selectedIdx),
+            if (selectedIdx >= 0 && selectedIdx < _photos.length &&
+                _photos[selectedIdx].bytes != null)
+              _photos.asMap().entries.firstWhere((e) => e.key == selectedIdx),
+          ];
+          return ordered.map((e) {
+            final p = e.value;
+            return Positioned(
               left: p.x * w,
               top: p.y * h,
               width: p.w * w,
@@ -377,7 +388,9 @@ class _ShareCustomizeScreenState extends State<ShareCustomizeScreen> {
               child: ClipRect(
                 child: Image.memory(p.bytes!, fit: BoxFit.contain),
               ),
-            )),
+            );
+          });
+        }(),
 
         // Gradient overlay for readability
         Container(
@@ -543,20 +556,39 @@ class _ShareCustomizeScreenState extends State<ShareCustomizeScreen> {
       );
     }
 
-    return Stack(
-      children: [
-        for (int i = 0; i < _photos.length; i++)
-          if (_photos[i].bytes != null) photoBox(i),
-        if (_layout[_Elem.title]!.visible && widget.event?.title != null)
-          textBox(_Elem.title),
-        if (_layout[_Elem.caption]!.visible && widget.summaryText != null)
-          textBox(_Elem.caption),
-        if (_layout[_Elem.date]!.visible && widget.event != null)
-          textBox(_Elem.date),
-        if (_layout[_Elem.address]!.visible && _address != null)
-          textBox(_Elem.address),
-      ],
-    );
+    // Build photo boxes with selected last
+    final selectedPhotoIdx = _selected is int ? _selected as int : -1;
+    final photoBoxes = [
+      for (int i = 0; i < _photos.length; i++)
+        if (_photos[i].bytes != null && i != selectedPhotoIdx) photoBox(i),
+      if (selectedPhotoIdx >= 0 && selectedPhotoIdx < _photos.length &&
+          _photos[selectedPhotoIdx].bytes != null)
+        photoBox(selectedPhotoIdx),
+    ];
+
+    // Build text boxes with selected last
+    final textElems = <_Elem>[_Elem.title, _Elem.caption, _Elem.date, _Elem.address];
+    final textBoxes = [
+      for (final e in textElems)
+        if (e != _selected &&
+            _layout[e]!.visible &&
+            _elemHasContent(e))
+          textBox(e),
+      if (_selected is _Elem && _layout[_selected as _Elem]!.visible &&
+          _elemHasContent(_selected as _Elem))
+        textBox(_selected as _Elem),
+    ];
+
+    return Stack(children: [...photoBoxes, ...textBoxes]);
+  }
+
+  bool _elemHasContent(_Elem e) {
+    return switch (e) {
+      _Elem.title => widget.event?.title != null,
+      _Elem.caption => widget.summaryText != null,
+      _Elem.date => widget.event != null,
+      _Elem.address => _address != null,
+    };
   }
 
   void _moveElem(_Elem elem, double dx, double dy) {

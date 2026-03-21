@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_manager/photo_manager.dart' hide LatLng;
+import 'package:video_player/video_player.dart';
 
 import '../models/event_summary.dart';
 import '../models/folder.dart';
@@ -541,6 +544,35 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     return years == 1 ? '1 year ago' : '$years years ago';
   }
 
+  Future<void> _deleteEvent() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Memory'),
+        content: const Text(
+            'This memory will be permanently deleted. This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final db = ref.read(appDatabaseProvider);
+    await db.deleteEvent(_event.eventId);
+    ref.invalidate(filteredJournalEventsProvider);
+    ref.invalidate(mapEventsProvider);
+    ref.invalidate(dailyStatsProvider);
+    if (mounted) Navigator.pop(context);
+  }
+
   Future<void> _splitEvent() async {
     final result = await Navigator.push<List<String>>(
       context,
@@ -649,6 +681,17 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                   ],
                 ),
               ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Delete', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
             ],
             onSelected: (v) {
               if (v == 'share') {
@@ -661,6 +704,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
               }
               if (v == 'split') _splitEvent();
               if (v == 'merge') _mergeEvent();
+              if (v == 'delete') _deleteEvent();
             },
           ),
         ],
@@ -1242,6 +1286,18 @@ class _AssetTile extends StatelessWidget {
 
   final String assetId;
 
+  Future<void> _playVideo(BuildContext context, AssetEntity asset) async {
+    final file = await asset.originFile;
+    if (file == null || !context.mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _VideoPlayerScreen(file: file),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<AssetEntity?>(
@@ -1280,14 +1336,17 @@ class _AssetTile extends StatelessWidget {
                   ),
                 ),
                 if (isVideo)
-                  const Center(
-                    child: CircleAvatar(
-                      radius: 28,
-                      backgroundColor: Colors.black45,
-                      child: Icon(
-                        Icons.play_arrow,
-                        color: Colors.white,
-                        size: 36,
+                  GestureDetector(
+                    onTap: () => _playVideo(ctx2, asset),
+                    child: const Center(
+                      child: CircleAvatar(
+                        radius: 28,
+                        backgroundColor: Colors.black45,
+                        child: Icon(
+                          Icons.play_arrow,
+                          color: Colors.white,
+                          size: 36,
+                        ),
                       ),
                     ),
                   ),
@@ -1296,6 +1355,87 @@ class _AssetTile extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+// ─── Full-screen video player ─────────────────────────────────────────────
+
+class _VideoPlayerScreen extends StatefulWidget {
+  const _VideoPlayerScreen({required this.file});
+
+  final File file;
+
+  @override
+  State<_VideoPlayerScreen> createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
+  late final VideoPlayerController _controller;
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.file(widget.file)
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _initialized = true);
+          _controller.play();
+        }
+      });
+    _controller.setLooping(true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+      ),
+      body: Center(
+        child: _initialized
+            ? GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _controller.value.isPlaying
+                        ? _controller.pause()
+                        : _controller.play();
+                  });
+                },
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    AspectRatio(
+                      aspectRatio: _controller.value.aspectRatio,
+                      child: VideoPlayer(_controller),
+                    ),
+                    ValueListenableBuilder(
+                      valueListenable: _controller,
+                      builder: (_, value, __) => AnimatedOpacity(
+                        opacity: value.isPlaying ? 0.0 : 1.0,
+                        duration: const Duration(milliseconds: 300),
+                        child: const CircleAvatar(
+                          radius: 32,
+                          backgroundColor: Colors.black45,
+                          child: Icon(Icons.play_arrow,
+                              color: Colors.white, size: 40),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : const CircularProgressIndicator(color: Colors.white),
+      ),
     );
   }
 }

@@ -1,9 +1,11 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:location/location.dart';
 import 'package:photo_manager/photo_manager.dart' hide LatLng;
 
 import '../models/event_summary.dart';
@@ -19,6 +21,66 @@ class EventMapScreen extends ConsumerStatefulWidget {
 }
 
 class _EventMapScreenState extends ConsumerState<EventMapScreen> {
+  LatLng? _myPosition;
+  BitmapDescriptor? _myLocationIcon;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMyLocation();
+  }
+
+  Future<void> _loadMyLocation() async {
+    try {
+      final data = await Location().getLocation();
+      if (data.latitude == null || data.longitude == null) return;
+      final icon = await _buildWhiteMarker();
+      if (mounted) {
+        setState(() {
+          _myPosition = LatLng(data.latitude!, data.longitude!);
+          _myLocationIcon = icon;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<BitmapDescriptor> _buildWhiteMarker() async {
+    const size = 36.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder,
+        Rect.fromLTWH(0, 0, size, size));
+
+    // Outer shadow/border
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2),
+      size / 2 - 1,
+      Paint()
+        ..color = Colors.blue.withValues(alpha: 0.4)
+        ..style = PaintingStyle.fill,
+    );
+    // White fill
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2),
+      size / 2 - 5,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
+    // Blue center dot
+    canvas.drawCircle(
+      const Offset(size / 2, size / 2),
+      4,
+      Paint()
+        ..color = Colors.blueAccent
+        ..style = PaintingStyle.fill,
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
+  }
+
   void _showEventBottomSheet(BuildContext context, EventSummary event) {
     showModalBottomSheet(
       context: context,
@@ -59,20 +121,29 @@ class _EventMapScreenState extends ConsumerState<EventMapScreen> {
                 },
                 myLocationButtonEnabled: false,
                 myLocationEnabled: false,
-                markers: geoEvents
-                    .map(
-                      (event) => Marker(
-                        markerId: MarkerId(event.eventId),
-                        position: LatLng(event.latitude!, event.longitude!),
-                        icon: event.color != null
-                            ? BitmapDescriptor.defaultMarkerWithHue(
-                                HSVColor.fromColor(Color(event.color!)).hue)
-                            : BitmapDescriptor.defaultMarkerWithHue(
-                                BitmapDescriptor.hueRose),
-                        onTap: () => _showEventBottomSheet(context, event),
-                      ),
-                    )
-                    .toSet(),
+                markers: {
+                  ...geoEvents.map(
+                    (event) => Marker(
+                      markerId: MarkerId(event.eventId),
+                      position: LatLng(event.latitude!, event.longitude!),
+                      icon: event.color != null
+                          ? BitmapDescriptor.defaultMarkerWithHue(
+                              HSVColor.fromColor(Color(event.color!)).hue)
+                          : BitmapDescriptor.defaultMarkerWithHue(
+                              BitmapDescriptor.hueRose),
+                      onTap: () => _showEventBottomSheet(context, event),
+                    ),
+                  ),
+                  if (_myPosition != null && _myLocationIcon != null)
+                    Marker(
+                      markerId: const MarkerId('__my_location__'),
+                      position: _myPosition!,
+                      icon: _myLocationIcon!,
+                      anchor: const Offset(0.5, 0.5),
+                      flat: true,
+                      zIndex: 100,
+                    ),
+                },
               ),
             ],
           );

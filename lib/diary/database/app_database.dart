@@ -1133,6 +1133,33 @@ class AppDatabase extends GeneratedDatabase {
     });
   }
 
+  Future<List<String>> queryAssetIdsForDay(DateTime dayUtc) async {
+    final dayStr =
+        '${dayUtc.year.toString().padLeft(4, '0')}-'
+        '${dayUtc.month.toString().padLeft(2, '0')}-'
+        '${dayUtc.day.toString().padLeft(2, '0')}';
+    final rows = await customSelect(
+      "SELECT asset_id FROM assets "
+      "WHERE date(created_at / 1000, 'unixepoch') = ? "
+      "ORDER BY created_at DESC LIMIT 50",
+      variables: [Variable<String>(dayStr)],
+    ).get();
+    return rows.map((r) => r.read<String>('asset_id')).toList();
+  }
+
+  Future<void> deleteEvent(String eventId) {
+    return transaction(() async {
+      await customStatement(
+          'DELETE FROM event_assets WHERE event_id = ?', [eventId]);
+      await customStatement(
+          'DELETE FROM event_tags WHERE event_id = ?', [eventId]);
+      await customStatement(
+          'DELETE FROM folder_items WHERE event_id = ?', [eventId]);
+      await customStatement(
+          'DELETE FROM events WHERE event_id = ?', [eventId]);
+    });
+  }
+
   // ─── Location clusters ────────────────────────────────────────────────────
 
   Future<List<LocationCluster>> queryLocationClusters() async {

@@ -6,10 +6,11 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:photo_manager/photo_manager.dart';
+import 'package:photo_manager/photo_manager.dart' hide LatLng;
 import 'package:share_plus/share_plus.dart';
 
 import '../../key.dart';
@@ -38,16 +39,95 @@ class _MonthlyRecapScreenState extends ConsumerState<MonthlyRecapScreen> {
   bool _loadingAi = false;
   bool _sharing = false;
 
+  late int _year;
+  late int _month;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.year;
+    _month = widget.month;
+  }
+
+  void _goToPrevMonth() {
+    setState(() {
+      _aiSummary = null;
+      if (_month == 1) {
+        _year -= 1;
+        _month = 12;
+      } else {
+        _month -= 1;
+      }
+    });
+  }
+
+  void _goToNextMonth() {
+    setState(() {
+      _aiSummary = null;
+      if (_month == 12) {
+        _year += 1;
+        _month = 1;
+      } else {
+        _month += 1;
+      }
+    });
+  }
+
+  Future<void> _pickMonth() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime(_year, _month),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+    );
+    if (picked != null) {
+      setState(() {
+        _aiSummary = null;
+        _year = picked.year;
+        _month = picked.month;
+      });
+    }
+  }
+
+  bool get _isCurrentMonth {
+    final now = DateTime.now();
+    return _year == now.year && _month == now.month;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final monthName = DateFormat('MMMM yyyy')
-        .format(DateTime(widget.year, widget.month));
-    final statsAsync =
-        ref.watch(monthlyStatsProvider((widget.year, widget.month)));
-    final locationClusters = ref.watch(locationClustersProvider);
+    final monthName = DateFormat('MMMM yyyy').format(DateTime(_year, _month));
+    final statsAsync = ref.watch(monthlyStatsProvider((_year, _month)));
+    final locationClusters =
+        ref.watch(monthlyLocationClustersProvider((_year, _month)));
 
     return Scaffold(
-      appBar: AppBar(title: Text(monthName)),
+      appBar: AppBar(
+        title: GestureDetector(
+          onTap: _pickMonth,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(monthName),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_down, size: 20),
+            ],
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Previous month',
+            onPressed: _goToPrevMonth,
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Next month',
+            onPressed: _isCurrentMonth ? null : _goToNextMonth,
+          ),
+        ],
+      ),
       body: statsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
@@ -63,7 +143,7 @@ class _MonthlyRecapScreenState extends ConsumerState<MonthlyRecapScreen> {
   ) {
     final totalPhotos = stats.fold(0, (sum, s) => sum + s.assetCount);
     final activeDays = stats.where((s) => s.assetCount > 0).length;
-    final daysInMonth = DateTime(widget.year, widget.month + 1, 0).day;
+    final daysInMonth = DateTime(_year, _month + 1, 0).day;
 
     DailyStats? mostActiveDay;
     for (final s in stats) {
@@ -94,8 +174,8 @@ class _MonthlyRecapScreenState extends ConsumerState<MonthlyRecapScreen> {
                       title: 'Highlights',
                       child: _HighlightThumbnails(
                         days: highlightDays,
-                        year: widget.year,
-                        month: widget.month,
+                        year: _year,
+                        month: _month,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -155,7 +235,7 @@ class _MonthlyRecapScreenState extends ConsumerState<MonthlyRecapScreen> {
 
   Widget _buildHeader(int totalPhotos, int activeDays, int daysInMonth) {
     final monthName = DateFormat('MMMM yyyy')
-        .format(DateTime(widget.year, widget.month));
+        .format(DateTime(_year, _month));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -186,7 +266,7 @@ class _MonthlyRecapScreenState extends ConsumerState<MonthlyRecapScreen> {
       if (byteData == null) return;
       final dir = await getTemporaryDirectory();
       final path =
-          '${dir.path}/monthly_${widget.year}_${widget.month}_${DateTime.now().millisecondsSinceEpoch}.png';
+          '${dir.path}/monthly_${_year}_${_month}_${DateTime.now().millisecondsSinceEpoch}.png';
       final file = await File(path).writeAsBytes(byteData.buffer.asUint8List());
       final box =
           _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
@@ -214,9 +294,9 @@ class _MonthlyRecapScreenState extends ConsumerState<MonthlyRecapScreen> {
       });
 
       final prompt = '''
-Monthly diary summary for ${widget.month}/${widget.year}:
+Monthly diary summary for $_month/$_year:
 - Total photos: $totalPhotos
-- Active days: $activeDays/${DateTime(widget.year, widget.month + 1, 0).day}
+- Active days: $activeDays/${DateTime(_year, _month + 1, 0).day}
 - Top location: $topLocation
 Write a single warm sentence summarizing this month.
 ''';
@@ -329,78 +409,114 @@ class _HighlightThumbnails extends StatelessWidget {
   }
 }
 
-class _DayThumbnail extends StatelessWidget {
+class _DayThumbnail extends ConsumerWidget {
   const _DayThumbnail({required this.day});
 
   final DateTime day;
 
   @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<AssetEntity>>(
-      future: _loadAssetsForDay(day),
-      builder: (context, snapshot) {
-        final asset = snapshot.data?.firstOrNull;
-        if (asset == null) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Query asset IDs directly from the diary DB — same source as DailyStats.assetCount.
+    final future = ref
+        .read(appDatabaseProvider)
+        .queryAssetIdsForDay(day);
+
+    return FutureBuilder<List<String>>(
+      future: future,
+      builder: (context, idsSnap) {
+        if (idsSnap.connectionState == ConnectionState.waiting) {
           return AspectRatio(
             aspectRatio: 1,
             child: Container(
               decoration: BoxDecoration(
-                color:
-                    Theme.of(context).colorScheme.surfaceContainerHighest,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final ids = idsSnap.data ?? [];
+        if (ids.isEmpty) {
+          return AspectRatio(
+            aspectRatio: 1,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.image_not_supported_outlined),
             ),
           );
         }
-        return FutureBuilder<Uint8List?>(
-          future: asset.thumbnailDataWithSize(const ThumbnailSize(200, 200)),
-          builder: (ctx, thumbSnap) {
-            if (!thumbSnap.hasData) {
+
+        return FutureBuilder<AssetEntity?>(
+          future: AssetEntity.fromId(ids.first),
+          builder: (ctx, assetSnap) {
+            final asset = assetSnap.data;
+            if (asset == null) {
               return AspectRatio(
                 aspectRatio: 1,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Theme.of(ctx)
-                        .colorScheme
-                        .surfaceContainerHighest,
+                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
               );
             }
-            return AspectRatio(
-              aspectRatio: 1,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.memory(
-                  thumbSnap.data!,
-                  fit: BoxFit.cover,
-                ),
-              ),
+
+            return FutureBuilder<Uint8List?>(
+              future: asset.thumbnailDataWithSize(const ThumbnailSize(400, 400)),
+              builder: (ctx2, thumbSnap) {
+                if (!thumbSnap.hasData) {
+                  return AspectRatio(
+                    aspectRatio: 1,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx2)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  );
+                }
+                return AspectRatio(
+                  aspectRatio: 1,
+                  child: GestureDetector(
+                    onTap: () => Navigator.push(
+                      ctx2,
+                      MaterialPageRoute(
+                        fullscreenDialog: true,
+                        builder: (_) => _FullScreenPhotoViewById(
+                          assetIds: ids,
+                          initialIndex: 0,
+                        ),
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(
+                        thumbSnap.data!,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                );
+              },
             );
           },
         );
       },
     );
-  }
-
-  Future<List<AssetEntity>> _loadAssetsForDay(DateTime day) async {
-    final startOfDay =
-        DateTime(day.year, day.month, day.day).toUtc();
-    final endOfDay =
-        DateTime(day.year, day.month, day.day + 1).toUtc();
-    final albums = await PhotoManager.getAssetPathList(
-      type: RequestType.image,
-      filterOption: FilterOptionGroup(
-        updateTimeCond: DateTimeCond(
-          min: startOfDay,
-          max: endOfDay,
-        ),
-      ),
-    );
-    if (albums.isEmpty) return [];
-    return albums.first.getAssetListRange(start: 0, end: 1);
   }
 }
 
@@ -469,7 +585,7 @@ class _StatCell extends StatelessWidget {
   }
 }
 
-// ─── Top locations ────────────────────────────────────────────────────────
+// ─── Top locations (map) ──────────────────────────────────────────────────
 
 class _TopLocations extends StatelessWidget {
   const _TopLocations({required this.clusters});
@@ -481,45 +597,41 @@ class _TopLocations extends StatelessWidget {
     if (clusters.isEmpty) {
       return const Text('No location data available');
     }
-    return Column(
-      children: clusters.asMap().entries.map((entry) {
-        final i = entry.key;
-        final c = entry.value;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            children: [
-              Text(_rankEmoji(i),
-                  style: const TextStyle(fontSize: 16)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  c.label as String,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Text(
-                '${c.assetCount} photos',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            ],
+    final top = clusters.first;
+    final center = LatLng(top.latitude as double, top.longitude as double);
+    final markers = <Marker>{
+      for (int i = 0; i < clusters.length; i++)
+        Marker(
+          markerId: MarkerId('loc_$i'),
+          position: LatLng(
+            clusters[i].latitude as double,
+            clusters[i].longitude as double,
           ),
-        );
-      }).toList(),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueRose),
+          infoWindow: InfoWindow(
+            title: clusters[i].label as String,
+            snippet: '${clusters[i].assetCount} photos',
+          ),
+        ),
+    };
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        height: 200,
+        child: GoogleMap(
+          key: ValueKey('${center.latitude},${center.longitude}'),
+          initialCameraPosition: CameraPosition(target: center, zoom: 11),
+          markers: markers,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: false,
+          scrollGesturesEnabled: false,
+          zoomGesturesEnabled: false,
+          rotateGesturesEnabled: false,
+          tiltGesturesEnabled: false,
+        ),
+      ),
     );
-  }
-
-  String _rankEmoji(int index) {
-    switch (index) {
-      case 0:
-        return '🥇';
-      case 1:
-        return '🥈';
-      case 2:
-        return '🥉';
-      default:
-        return '${index + 1}.';
-    }
   }
 }
 
@@ -554,6 +666,168 @@ class _AiSummarySection extends StatelessWidget {
       onPressed: onGenerate,
       icon: const Icon(Icons.auto_awesome, size: 16),
       label: const Text('Generate Summary'),
+    );
+  }
+}
+
+// ─── Full-screen swipeable photo viewer (by asset ID list) ───────────────
+
+class _FullScreenPhotoViewById extends StatefulWidget {
+  const _FullScreenPhotoViewById({
+    required this.assetIds,
+    required this.initialIndex,
+  });
+
+  final List<String> assetIds;
+  final int initialIndex;
+
+  @override
+  State<_FullScreenPhotoViewById> createState() =>
+      _FullScreenPhotoViewByIdState();
+}
+
+class _FullScreenPhotoViewByIdState extends State<_FullScreenPhotoViewById> {
+  late int _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.initialIndex;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        title: widget.assetIds.length > 1
+            ? Text(
+                '${_current + 1} / ${widget.assetIds.length}',
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+              )
+            : null,
+      ),
+      body: PageView.builder(
+        controller: PageController(initialPage: widget.initialIndex),
+        itemCount: widget.assetIds.length,
+        onPageChanged: (i) => setState(() => _current = i),
+        itemBuilder: (ctx, i) => _PhotoPageById(assetId: widget.assetIds[i]),
+      ),
+    );
+  }
+}
+
+class _PhotoPageById extends StatelessWidget {
+  const _PhotoPageById({required this.assetId});
+
+  final String assetId;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AssetEntity?>(
+      future: AssetEntity.fromId(assetId),
+      builder: (ctx, assetSnap) {
+        if (!assetSnap.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+        return FutureBuilder<Uint8List?>(
+          future: assetSnap.data!
+              .thumbnailDataWithSize(const ThumbnailSize(1200, 1200)),
+          builder: (ctx2, snap) {
+            if (!snap.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              );
+            }
+            return InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 5.0,
+              child: Center(
+                child: Image.memory(snap.data!, fit: BoxFit.contain),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ─── Full-screen swipeable photo viewer ──────────────────────────────────
+
+class _FullScreenPhotoView extends StatefulWidget {
+  const _FullScreenPhotoView({
+    required this.assets,
+    required this.initialIndex,
+  });
+
+  final List<AssetEntity> assets;
+  final int initialIndex;
+
+  @override
+  State<_FullScreenPhotoView> createState() => _FullScreenPhotoViewState();
+}
+
+class _FullScreenPhotoViewState extends State<_FullScreenPhotoView> {
+  late int _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.initialIndex;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        title: widget.assets.length > 1
+            ? Text(
+                '${_current + 1} / ${widget.assets.length}',
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+              )
+            : null,
+      ),
+      body: PageView.builder(
+        controller: PageController(initialPage: widget.initialIndex),
+        itemCount: widget.assets.length,
+        onPageChanged: (i) => setState(() => _current = i),
+        itemBuilder: (ctx, i) => _PhotoPage(asset: widget.assets[i]),
+      ),
+    );
+  }
+}
+
+class _PhotoPage extends StatelessWidget {
+  const _PhotoPage({required this.asset});
+
+  final AssetEntity asset;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List?>(
+      future: asset.thumbnailDataWithSize(const ThumbnailSize(1200, 1200)),
+      builder: (ctx, snap) {
+        if (!snap.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+        return InteractiveViewer(
+          minScale: 0.8,
+          maxScale: 5.0,
+          child: Center(
+            child: Image.memory(snap.data!, fit: BoxFit.contain),
+          ),
+        );
+      },
     );
   }
 }
