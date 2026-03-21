@@ -1,10 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../models/ai_persona.dart';
 import '../models/app_settings.dart';
 import '../database/database_helper.dart';
 import '../services/settings_service.dart';
-import 'persona_management_screen.dart';
 import 'tag_settings_screen.dart';
 import 'webview_screen.dart';
 
@@ -17,7 +15,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final DatabaseHelper _db = DatabaseHelper.instance;
-  List<AiPersona> _allPersonas = [];
   bool _isLoading = true;
   AiImageModel _preferredImageModel = AiImageModel.gemini;
 
@@ -30,11 +27,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     setState(() => _isLoading = true);
 
-    final personas = await _db.getAllPersonas();
     final settings = await SettingsService.loadSettings();
 
     setState(() {
-      _allPersonas = personas;
       _preferredImageModel = settings.preferredImageModel;
       _isLoading = false;
     });
@@ -63,25 +58,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.people),
-                      title: const Text('Manage Personas'),
-                      subtitle: Text('${_allPersonas.length} personas'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const PersonaManagementScreen(),
-                          ),
-                        );
-                        _loadSettings();
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 12),
                   Card(
                     child: ListTile(
                       leading: const Icon(Icons.label),

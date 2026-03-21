@@ -1,833 +1,719 @@
-import 'dart:io';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import '../models/post.dart';
+import 'package:drift/drift.dart';
+import 'package:drift_flutter/drift_flutter.dart';
+
+import '../models/ai_task.dart';
 import '../models/comment.dart';
 import '../models/like.dart';
-import '../models/ai_persona.dart';
-import '../models/chat_message.dart';
-import '../models/ai_task.dart';
+import '../models/post.dart';
 import '../models/scheduled_notification.dart';
-import '../data/default_personas.dart';
+import '../models/task.dart';
+
+const String _legacySchemaSql = '''
+CREATE TABLE posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT,
+  mediaPaths TEXT NOT NULL,
+  caption TEXT,
+  locationName TEXT,
+  latitude REAL,
+  longitude REAL,
+  postDate TEXT,
+  tag TEXT,
+  keywords TEXT NOT NULL DEFAULT '',
+  viewCount INTEGER NOT NULL DEFAULT 0,
+  likeCount INTEGER NOT NULL DEFAULT 0,
+  enableAiReactions INTEGER NOT NULL DEFAULT 1,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+CREATE TABLE comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  postId INTEGER NOT NULL,
+  aiPersonaId INTEGER,
+  isUser INTEGER NOT NULL DEFAULT 0,
+  content TEXT NOT NULL,
+  createdAt TEXT NOT NULL
+);
+CREATE TABLE likes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  postId INTEGER NOT NULL,
+  aiPersonaId INTEGER,
+  isUser INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL
+);
+CREATE TABLE tag_settings (
+  tag TEXT PRIMARY KEY,
+  customName TEXT NOT NULL
+);
+CREATE TABLE ai_tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  postId INTEGER NOT NULL,
+  taskType TEXT NOT NULL,
+  retryCount INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL,
+  lastAttemptAt TEXT,
+  errorMessage TEXT
+);
+CREATE TABLE scheduled_notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  postId INTEGER NOT NULL,
+  aiPersonaId INTEGER,
+  notificationType TEXT NOT NULL,
+  commentContent TEXT,
+  scheduledTime TEXT NOT NULL,
+  isDelivered INTEGER NOT NULL DEFAULT 0,
+  isRead INTEGER NOT NULL DEFAULT 0,
+  createdAt TEXT NOT NULL
+);
+CREATE TABLE tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  aiPersonaId INTEGER,
+  title TEXT NOT NULL,
+  description TEXT,
+  dueDate TEXT,
+  recurrenceType INTEGER NOT NULL DEFAULT 0,
+  intervalDays INTEGER,
+  weekdays TEXT,
+  monthDay INTEGER,
+  time TEXT,
+  isCompleted INTEGER NOT NULL DEFAULT 0,
+  lastNotificationDate TEXT,
+  createdAt TEXT NOT NULL,
+  completedAt TEXT
+);
+''';
+
+QueryExecutor _openLegacyConnection() {
+  return driftDatabase(name: 'legacy_logat');
+}
+
+class _LegacyDatabase extends GeneratedDatabase {
+  _LegacyDatabase() : super(_openLegacyConnection());
+
+  @override
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        beforeOpen: (details) async {
+          await customStatement('PRAGMA foreign_keys = ON;');
+        },
+        onCreate: (migrator) async {
+          for (final statement in _legacySchemaSql
+              .split(';')
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)) {
+            await customStatement('$statement;');
+          }
+        },
+        onUpgrade: (migrator, from, to) async {
+          if (from < 2) {
+            await customStatement(
+              'ALTER TABLE posts ADD COLUMN keywords TEXT NOT NULL DEFAULT ""',
+            );
+          }
+        },
+      );
+
+  @override
+  Iterable<TableInfo<Table, Object?>> get allTables => const [];
+
+  @override
+  List<DatabaseSchemaEntity> get allSchemaEntities => const [];
+}
 
 class DatabaseHelper {
-  static final DatabaseHelper instance = DatabaseHelper._init();
-  static Database? _database;
-
   DatabaseHelper._init();
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDB('social_media.db');
-    return _database!;
-  }
+  static final DatabaseHelper instance = DatabaseHelper._init();
 
-  Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
+  final _LegacyDatabase _database = _LegacyDatabase();
 
-    return await openDatabase(
-      path,
-      version: 9,
-      onCreate: _createDB,
-      onUpgrade: _upgradeDB,
-    );
-  }
+  Future<void> _ensureSeeded() async {}
 
-  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      // Migrate from single mediaPath to mediaPaths
-      await db.execute('ALTER TABLE posts RENAME TO posts_old');
-      await db.execute('''
-        CREATE TABLE posts (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          mediaPaths TEXT NOT NULL,
-          caption TEXT,
-          location TEXT,
-          viewCount INTEGER DEFAULT 0,
-          likeCount INTEGER DEFAULT 0,
-          enableAiReactions INTEGER DEFAULT 1,
-          createdAt TEXT NOT NULL
-        )
-      ''');
-
-      // Copy old data
-      await db.execute('''
-        INSERT INTO posts (id, mediaPaths, caption, location, viewCount, likeCount, enableAiReactions, createdAt)
-        SELECT id, mediaPath, caption, location, viewCount, likeCount, 1, createdAt FROM posts_old
-      ''');
-
-      await db.execute('DROP TABLE posts_old');
-    }
-
-    if (oldVersion < 3) {
-      // Add new fields to ai_personas table
-      await db.execute('ALTER TABLE ai_personas ADD COLUMN aiProvider INTEGER DEFAULT 0');
-      await db.execute('ALTER TABLE ai_personas ADD COLUMN commentProbability REAL DEFAULT 0.5');
-      await db.execute('ALTER TABLE ai_personas ADD COLUMN likeProbability REAL DEFAULT 0.7');
-    }
-
-    if (oldVersion < 4) {
-      // Add new fields to posts table
-      await db.execute('ALTER TABLE posts ADD COLUMN latitude REAL');
-      await db.execute('ALTER TABLE posts ADD COLUMN longitude REAL');
-      await db.execute('ALTER TABLE posts ADD COLUMN updatedAt TEXT');
-
-      // Set updatedAt to createdAt for existing posts
-      await db.execute('UPDATE posts SET updatedAt = createdAt WHERE updatedAt IS NULL');
-    }
-
-    if (oldVersion < 5) {
-      // Add isUser field to comments and likes tables
-      await db.execute('ALTER TABLE comments ADD COLUMN isUser INTEGER DEFAULT 0');
-      await db.execute('ALTER TABLE likes ADD COLUMN isUser INTEGER DEFAULT 0');
-
-      // Make aiPersonaId nullable by recreating tables
-      // First, create temporary tables
-      await db.execute('''
-        CREATE TABLE comments_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          postId INTEGER NOT NULL,
-          aiPersonaId INTEGER,
-          isUser INTEGER DEFAULT 0,
-          content TEXT NOT NULL,
-          createdAt TEXT NOT NULL,
-          FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
-        )
-      ''');
-
-      await db.execute('''
-        CREATE TABLE likes_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          postId INTEGER NOT NULL,
-          aiPersonaId INTEGER,
-          isUser INTEGER DEFAULT 0,
-          createdAt TEXT NOT NULL,
-          FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
-        )
-      ''');
-
-      // Copy data
-      await db.execute('INSERT INTO comments_new SELECT id, postId, aiPersonaId, isUser, content, createdAt FROM comments');
-      await db.execute('INSERT INTO likes_new SELECT id, postId, aiPersonaId, isUser, createdAt FROM likes');
-
-      // Drop old tables and rename new ones
-      await db.execute('DROP TABLE comments');
-      await db.execute('DROP TABLE likes');
-      await db.execute('ALTER TABLE comments_new RENAME TO comments');
-      await db.execute('ALTER TABLE likes_new RENAME TO likes');
-    }
-
-    if (oldVersion < 6) {
-      // Rename aiProvider column to aiModel in ai_personas table
-      // SQLite doesn't support ALTER TABLE RENAME COLUMN in older versions
-      // So we need to recreate the table
-      await db.execute('''
-        CREATE TABLE ai_personas_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          avatar TEXT NOT NULL,
-          role TEXT NOT NULL,
-          personality TEXT NOT NULL,
-          systemPrompt TEXT NOT NULL,
-          bio TEXT,
-          aiModel INTEGER DEFAULT 0,
-          commentProbability REAL DEFAULT 0.5,
-          likeProbability REAL DEFAULT 0.7
-        )
-      ''');
-
-      // Copy data (aiProvider -> aiModel)
-      await db.execute('''
-        INSERT INTO ai_personas_new (id, name, avatar, role, personality, systemPrompt, bio, aiModel, commentProbability, likeProbability)
-        SELECT id, name, avatar, role, personality, systemPrompt, bio, aiProvider, commentProbability, likeProbability
-        FROM ai_personas
-      ''');
-
-      // Drop old table and rename new one
-      await db.execute('DROP TABLE ai_personas');
-      await db.execute('ALTER TABLE ai_personas_new RENAME TO ai_personas');
-    }
-
-    if (oldVersion < 7) {
-      // Add title, tag fields and rename location to locationName
-      await db.execute('ALTER TABLE posts ADD COLUMN title TEXT');
-      await db.execute('ALTER TABLE posts ADD COLUMN tag TEXT');
-
-      // Rename location to locationName by recreating the table
-      await db.execute('''
-        CREATE TABLE posts_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          title TEXT,
-          mediaPaths TEXT NOT NULL,
-          caption TEXT,
-          locationName TEXT,
-          latitude REAL,
-          longitude REAL,
-          tag TEXT,
-          viewCount INTEGER DEFAULT 0,
-          likeCount INTEGER DEFAULT 0,
-          enableAiReactions INTEGER DEFAULT 1,
-          createdAt TEXT NOT NULL,
-          updatedAt TEXT NOT NULL
-        )
-      ''');
-
-      // Copy data (location -> locationName)
-      await db.execute('''
-        INSERT INTO posts_new (id, title, mediaPaths, caption, locationName, latitude, longitude, tag, viewCount, likeCount, enableAiReactions, createdAt, updatedAt)
-        SELECT id, NULL, mediaPaths, caption, location, latitude, longitude, NULL, viewCount, likeCount, enableAiReactions, createdAt, updatedAt
-        FROM posts
-      ''');
-
-      // Drop old table and rename new one
-      await db.execute('DROP TABLE posts');
-      await db.execute('ALTER TABLE posts_new RENAME TO posts');
-
-      // Create tag_settings table for custom tag names
-      await db.execute('''
-        CREATE TABLE tag_settings (
-          tag TEXT PRIMARY KEY,
-          customName TEXT NOT NULL
-        )
-      ''');
-    }
-
-    if (oldVersion < 8) {
-      // Add postDate field
-      await db.execute('ALTER TABLE posts ADD COLUMN postDate TEXT');
-    }
-
-    if (oldVersion < 9) {
-      // Create ai_tasks table for queue-based AI processing
-      await db.execute('''
-        CREATE TABLE ai_tasks (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          postId INTEGER NOT NULL,
-          taskType TEXT NOT NULL,
-          retryCount INTEGER DEFAULT 0,
-          createdAt TEXT NOT NULL,
-          lastAttemptAt TEXT,
-          errorMessage TEXT,
-          FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
-        )
-      ''');
-
-      // Create scheduled_notifications table
-      await db.execute('''
-        CREATE TABLE scheduled_notifications (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          postId INTEGER NOT NULL,
-          aiPersonaId INTEGER,
-          notificationType TEXT NOT NULL,
-          commentContent TEXT,
-          scheduledTime TEXT NOT NULL,
-          isDelivered INTEGER DEFAULT 0,
-          isRead INTEGER DEFAULT 0,
-          createdAt TEXT NOT NULL,
-          FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE,
-          FOREIGN KEY (aiPersonaId) REFERENCES ai_personas (id) ON DELETE CASCADE
-        )
-      ''');
-    }
-  }
-
-  Future<void> _createDB(Database db, int version) async {
-    // Posts table
-    await db.execute('''
-      CREATE TABLE posts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        mediaPaths TEXT NOT NULL,
-        caption TEXT,
-        locationName TEXT,
-        latitude REAL,
-        longitude REAL,
-        postDate TEXT,
-        tag TEXT,
-        viewCount INTEGER DEFAULT 0,
-        likeCount INTEGER DEFAULT 0,
-        enableAiReactions INTEGER DEFAULT 1,
-        createdAt TEXT NOT NULL,
-        updatedAt TEXT NOT NULL
-      )
-    ''');
-
-    // Comments 테이블
-    await db.execute('''
-      CREATE TABLE comments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        postId INTEGER NOT NULL,
-        aiPersonaId INTEGER,
-        isUser INTEGER DEFAULT 0,
-        content TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
-      )
-    ''');
-
-    // Likes 테이블
-    await db.execute('''
-      CREATE TABLE likes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        postId INTEGER NOT NULL,
-        aiPersonaId INTEGER,
-        isUser INTEGER DEFAULT 0,
-        createdAt TEXT NOT NULL,
-        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
-      )
-    ''');
-
-    // AI Personas 테이블
-    await db.execute('''
-      CREATE TABLE ai_personas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        avatar TEXT NOT NULL,
-        role TEXT NOT NULL,
-        personality TEXT NOT NULL,
-        systemPrompt TEXT NOT NULL,
-        bio TEXT,
-        aiModel INTEGER DEFAULT 0,
-        commentProbability REAL DEFAULT 0.5,
-        likeProbability REAL DEFAULT 0.7
-      )
-    ''');
-
-    // Chat Messages 테이블
-    await db.execute('''
-      CREATE TABLE chat_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        aiPersonaId INTEGER NOT NULL,
-        isUser INTEGER NOT NULL,
-        content TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        FOREIGN KEY (aiPersonaId) REFERENCES ai_personas (id)
-      )
-    ''');
-
-    // Tag settings table for custom tag names
-    await db.execute('''
-      CREATE TABLE tag_settings (
-        tag TEXT PRIMARY KEY,
-        customName TEXT NOT NULL
-      )
-    ''');
-
-    // AI Tasks table for queue-based AI processing
-    await db.execute('''
-      CREATE TABLE ai_tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        postId INTEGER NOT NULL,
-        taskType TEXT NOT NULL,
-        retryCount INTEGER DEFAULT 0,
-        createdAt TEXT NOT NULL,
-        lastAttemptAt TEXT,
-        errorMessage TEXT,
-        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE
-      )
-    ''');
-
-    // Scheduled Notifications table
-    await db.execute('''
-      CREATE TABLE scheduled_notifications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        postId INTEGER NOT NULL,
-        aiPersonaId INTEGER,
-        notificationType TEXT NOT NULL,
-        commentContent TEXT,
-        scheduledTime TEXT NOT NULL,
-        isDelivered INTEGER DEFAULT 0,
-        isRead INTEGER DEFAULT 0,
-        createdAt TEXT NOT NULL,
-        FOREIGN KEY (postId) REFERENCES posts (id) ON DELETE CASCADE,
-        FOREIGN KEY (aiPersonaId) REFERENCES ai_personas (id) ON DELETE CASCADE
-      )
-    ''');
-
-    // 기본 AI 페르소나 삽입
-    final personas = getDefaultPersonas();
-    for (var persona in personas) {
-      await db.insert('ai_personas', persona.toMap());
-    }
-  }
-
-  // ========== Posts ==========
   Future<int> createPost(Post post) async {
-    final db = await database;
-    return await db.insert('posts', post.toMap());
+    await _ensureSeeded();
+    return _insert(
+      '''
+      INSERT INTO posts (
+        title, mediaPaths, caption, locationName, latitude, longitude, postDate,
+        tag, keywords, viewCount, likeCount, enableAiReactions, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        post.title,
+        post.toMap()['mediaPaths'],
+        post.caption,
+        post.locationName,
+        post.latitude,
+        post.longitude,
+        post.postDate?.toIso8601String(),
+        post.tag,
+        post.keywords.isEmpty ? '' : post.keywords.join('|||'),
+        post.viewCount,
+        post.likeCount,
+        post.enableAiReactions ? 1 : 0,
+        post.createdAt.toIso8601String(),
+        post.updatedAt.toIso8601String(),
+      ],
+    );
   }
 
   Future<List<Post>> getAllPosts() async {
-    final db = await database;
-    final result = await db.query(
-      'posts',
-      orderBy: 'createdAt DESC',
-    );
-    // Convert maps to Posts asynchronously
-    final posts = <Post>[];
-    for (final map in result) {
-      posts.add(await Post.fromMap(map));
-    }
-    return posts;
+    await _ensureSeeded();
+    final rows = await _database
+        .customSelect(
+          'SELECT * FROM posts ORDER BY createdAt DESC',
+        )
+        .get();
+    return Future.wait(rows.map((row) => Post.fromMap(row.data)));
   }
 
   Future<Post?> getPost(int id) async {
-    final db = await database;
-    final result = await db.query(
-      'posts',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    if (result.isEmpty) return null;
-    return await Post.fromMap(result.first);
+    await _ensureSeeded();
+    final rows = await _database.customSelect(
+      'SELECT * FROM posts WHERE id = ? LIMIT 1',
+      variables: [Variable<int>(id)],
+    ).get();
+    if (rows.isEmpty) {
+      return null;
+    }
+    return Post.fromMap(rows.first.data);
   }
 
   Future<int> updatePost(Post post) async {
-    final db = await database;
-    return await db.update(
-      'posts',
-      post.toMap(),
-      where: 'id = ?',
-      whereArgs: [post.id],
+    await _ensureSeeded();
+    if (post.id == null) {
+      return 0;
+    }
+    await _database.customStatement(
+      '''
+      UPDATE posts
+      SET title = ?, mediaPaths = ?, caption = ?, locationName = ?, latitude = ?,
+          longitude = ?, postDate = ?, tag = ?, keywords = ?, viewCount = ?,
+          likeCount = ?, enableAiReactions = ?, createdAt = ?, updatedAt = ?
+      WHERE id = ?
+      ''',
+      [
+        post.title,
+        post.toMap()['mediaPaths'],
+        post.caption,
+        post.locationName,
+        post.latitude,
+        post.longitude,
+        post.postDate?.toIso8601String(),
+        post.tag,
+        post.keywords.isEmpty ? '' : post.keywords.join('|||'),
+        post.viewCount,
+        post.likeCount,
+        post.enableAiReactions ? 1 : 0,
+        post.createdAt.toIso8601String(),
+        post.updatedAt.toIso8601String(),
+        post.id,
+      ],
     );
+    return 1;
   }
 
   Future<int> deletePost(int id) async {
-    // First, get the post to access its media files
-    final post = await getPost(id);
-
-    // Delete media files from storage if post exists
-    if (post != null && post.mediaPaths.isNotEmpty) {
-      for (final mediaPath in post.mediaPaths) {
-        try {
-          final file = File(mediaPath);
-          if (await file.exists()) {
-            await file.delete();
-            print('🗑️ Deleted media file: $mediaPath');
-          }
-        } catch (e) {
-          print('⚠️ Failed to delete media file $mediaPath: $e');
-          // Continue even if file deletion fails
-        }
-      }
-    }
-
-    // Delete the post from database
-    final db = await database;
-    return await db.delete(
-      'posts',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await _ensureSeeded();
+    await _database.transaction(() async {
+      await _database
+          .customStatement('DELETE FROM comments WHERE postId = ?', [id]);
+      await _database
+          .customStatement('DELETE FROM likes WHERE postId = ?', [id]);
+      await _database
+          .customStatement('DELETE FROM ai_tasks WHERE postId = ?', [id]);
+      await _database.customStatement(
+        'DELETE FROM scheduled_notifications WHERE postId = ?',
+        [id],
+      );
+      await _database.customStatement('DELETE FROM posts WHERE id = ?', [id]);
+    });
+    return 1;
   }
 
   Future<int> incrementViewCount(int postId) async {
-    final db = await database;
-    return await db.rawUpdate(
+    await _ensureSeeded();
+    await _database.customStatement(
       'UPDATE posts SET viewCount = viewCount + 1 WHERE id = ?',
       [postId],
     );
+    return 1;
   }
 
-  // ========== Comments ==========
   Future<int> createComment(Comment comment) async {
-    final db = await database;
-    return await db.insert('comments', comment.toMap());
+    await _ensureSeeded();
+    return _insert(
+      '''
+      INSERT INTO comments (postId, aiPersonaId, isUser, content, createdAt)
+      VALUES (?, ?, ?, ?, ?)
+      ''',
+      [
+        comment.postId,
+        comment.aiPersonaId,
+        comment.isUser ? 1 : 0,
+        comment.content,
+        comment.createdAt.toIso8601String(),
+      ],
+    );
   }
 
   Future<List<Comment>> getCommentsByPost(int postId) async {
-    final db = await database;
-    final result = await db.query(
-      'comments',
-      where: 'postId = ?',
-      whereArgs: [postId],
-      orderBy: 'createdAt ASC',
-    );
-    return result.map((map) => Comment.fromMap(map)).toList();
+    await _ensureSeeded();
+    final rows = await _database.customSelect(
+      'SELECT * FROM comments WHERE postId = ? ORDER BY createdAt ASC',
+      variables: [Variable<int>(postId)],
+    ).get();
+    return rows.map((row) => Comment.fromMap(row.data)).toList();
   }
 
   Future<int> updateComment(Comment comment) async {
-    final db = await database;
-    return await db.update(
-      'comments',
-      comment.toMap(),
-      where: 'id = ?',
-      whereArgs: [comment.id],
+    await _ensureSeeded();
+    if (comment.id == null) {
+      return 0;
+    }
+    await _database.customStatement(
+      '''
+      UPDATE comments
+      SET postId = ?, aiPersonaId = ?, isUser = ?, content = ?, createdAt = ?
+      WHERE id = ?
+      ''',
+      [
+        comment.postId,
+        comment.aiPersonaId,
+        comment.isUser ? 1 : 0,
+        comment.content,
+        comment.createdAt.toIso8601String(),
+        comment.id,
+      ],
     );
+    return 1;
   }
 
   Future<int> deleteComment(int id) async {
-    final db = await database;
-    return await db.delete(
-      'comments',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await _ensureSeeded();
+    await _database.customStatement('DELETE FROM comments WHERE id = ?', [id]);
+    return 1;
   }
 
-  // ========== Likes ==========
   Future<int> createLike(Like like) async {
-    final db = await database;
-    try {
-      final id = await db.insert('likes', like.toMap());
-      // 좋아요 수 증가
-      await db.rawUpdate(
-        'UPDATE posts SET likeCount = likeCount + 1 WHERE id = ?',
-        [like.postId],
-      );
-      return id;
-    } catch (e) {
-      return -1; // 이미 좋아요를 눌렀을 경우
-    }
+    await _ensureSeeded();
+    return _insert(
+      '''
+      INSERT INTO likes (postId, aiPersonaId, isUser, createdAt)
+      VALUES (?, ?, ?, ?)
+      ''',
+      [
+        like.postId,
+        like.aiPersonaId,
+        like.isUser ? 1 : 0,
+        like.createdAt.toIso8601String(),
+      ],
+    );
   }
 
-  Future<int> deleteLike(int postId, {int? aiPersonaId, bool isUser = false}) async {
-    final db = await database;
-
-    String where;
-    List<dynamic> whereArgs;
-
-    if (isUser) {
-      where = 'postId = ? AND isUser = 1';
-      whereArgs = [postId];
-    } else if (aiPersonaId != null) {
-      where = 'postId = ? AND aiPersonaId = ?';
-      whereArgs = [postId, aiPersonaId];
-    } else {
-      throw ArgumentError('Either aiPersonaId or isUser must be provided');
-    }
-
-    final result = await db.delete(
-      'likes',
-      where: where,
-      whereArgs: whereArgs,
+  Future<int> deleteLike(int postId,
+      {int? aiPersonaId, bool isUser = false}) async {
+    await _ensureSeeded();
+    await _database.customStatement(
+      '''
+      DELETE FROM likes
+      WHERE postId = ?
+        AND ${aiPersonaId == null ? 'aiPersonaId IS NULL' : 'aiPersonaId = ?'}
+        AND isUser = ?
+      ''',
+      [
+        postId,
+        if (aiPersonaId != null) aiPersonaId,
+        isUser ? 1 : 0,
+      ],
     );
-    if (result > 0) {
-      // 좋아요 수 감소
-      await db.rawUpdate(
-        'UPDATE posts SET likeCount = likeCount - 1 WHERE id = ?',
-        [postId],
-      );
-    }
-    return result;
+    return 1;
   }
 
   Future<List<Like>> getLikesByPost(int postId) async {
-    final db = await database;
-    final result = await db.query(
-      'likes',
-      where: 'postId = ?',
-      whereArgs: [postId],
-      orderBy: 'createdAt DESC',
-    );
-    return result.map((map) => Like.fromMap(map)).toList();
+    await _ensureSeeded();
+    final rows = await _database.customSelect(
+      'SELECT * FROM likes WHERE postId = ? ORDER BY createdAt ASC',
+      variables: [Variable<int>(postId)],
+    ).get();
+    return rows.map((row) => Like.fromMap(row.data)).toList();
   }
 
   Future<bool> hasLiked(int postId, int aiPersonaId) async {
-    final db = await database;
-    final result = await db.query(
-      'likes',
-      where: 'postId = ? AND aiPersonaId = ?',
-      whereArgs: [postId, aiPersonaId],
-    );
-    return result.isNotEmpty;
+    await _ensureSeeded();
+    final row = await _database.customSelect(
+      'SELECT COUNT(*) AS count FROM likes WHERE postId = ? AND aiPersonaId = ?',
+      variables: [Variable<int>(postId), Variable<int>(aiPersonaId)],
+    ).getSingle();
+    return row.read<int>('count') > 0;
   }
 
-  // ========== AI Personas ==========
-  Future<List<AiPersona>> getAllPersonas() async {
-    final db = await database;
-    final result = await db.query('ai_personas');
-    return result.map((map) => AiPersona.fromMap(map)).toList();
-  }
-
-  Future<AiPersona?> getPersona(int id) async {
-    final db = await database;
-    final result = await db.query(
-      'ai_personas',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    if (result.isEmpty) return null;
-    return AiPersona.fromMap(result.first);
-  }
-
-  Future<int> createPersona(AiPersona persona) async {
-    final db = await database;
-    return await db.insert('ai_personas', persona.toMap());
-  }
-
-  Future<int> updatePersona(AiPersona persona) async {
-    final db = await database;
-    return await db.update(
-      'ai_personas',
-      persona.toMap(),
-      where: 'id = ?',
-      whereArgs: [persona.id],
-    );
-  }
-
-  Future<int> deletePersona(int id) async {
-    final db = await database;
-    return await db.delete(
-      'ai_personas',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
-  // ========== Chat Messages ==========
-  Future<int> createChatMessage(ChatMessage message) async {
-    final db = await database;
-    return await db.insert('chat_messages', message.toMap());
-  }
-
-  Future<List<ChatMessage>> getChatMessages(int aiPersonaId) async {
-    final db = await database;
-    final result = await db.query(
-      'chat_messages',
-      where: 'aiPersonaId = ?',
-      whereArgs: [aiPersonaId],
-      orderBy: 'createdAt ASC',
-    );
-    return result.map((map) => ChatMessage.fromMap(map)).toList();
-  }
-
-  Future<int> deleteChatMessages(int aiPersonaId) async {
-    final db = await database;
-    return await db.delete(
-      'chat_messages',
-      where: 'aiPersonaId = ?',
-      whereArgs: [aiPersonaId],
-    );
-  }
-
-  // ========== Tag Settings ==========
   Future<Map<String, String>> getAllTagSettings() async {
-    final db = await database;
-    final result = await db.query('tag_settings');
-    return Map.fromEntries(
-      result.map((row) => MapEntry(row['tag'] as String, row['customName'] as String)),
-    );
+    await _ensureSeeded();
+    final rows =
+        await _database.customSelect('SELECT * FROM tag_settings').get();
+    return {
+      for (final row in rows)
+        row.read<String>('tag'): row.read<String>('customName'),
+    };
   }
 
   Future<String?> getTagCustomName(String tag) async {
-    final db = await database;
-    final result = await db.query(
-      'tag_settings',
-      where: 'tag = ?',
-      whereArgs: [tag],
-    );
-    if (result.isEmpty) return null;
-    return result.first['customName'] as String;
+    await _ensureSeeded();
+    final rows = await _database.customSelect(
+      'SELECT customName FROM tag_settings WHERE tag = ? LIMIT 1',
+      variables: [Variable<String>(tag)],
+    ).get();
+    if (rows.isEmpty) {
+      return null;
+    }
+    return rows.first.read<String>('customName');
   }
 
   Future<void> setTagCustomName(String tag, String customName) async {
-    final db = await database;
-    await db.insert(
-      'tag_settings',
-      {'tag': tag, 'customName': customName},
-      conflictAlgorithm: ConflictAlgorithm.replace,
+    await _ensureSeeded();
+    await _database.customStatement(
+      '''
+      INSERT INTO tag_settings (tag, customName)
+      VALUES (?, ?)
+      ON CONFLICT(tag) DO UPDATE SET customName = excluded.customName
+      ''',
+      [tag, customName],
     );
   }
 
   Future<void> deleteTagCustomName(String tag) async {
-    final db = await database;
-    await db.delete(
-      'tag_settings',
-      where: 'tag = ?',
-      whereArgs: [tag],
-    );
+    await _ensureSeeded();
+    await _database
+        .customStatement('DELETE FROM tag_settings WHERE tag = ?', [tag]);
   }
 
-  // ========== AI Tasks ==========
   Future<int> createAiTask(AiTask task) async {
-    final db = await database;
-    return await db.insert('ai_tasks', task.toMap());
+    await _ensureSeeded();
+    return _insert(
+      '''
+      INSERT INTO ai_tasks (postId, taskType, retryCount, createdAt, lastAttemptAt, errorMessage)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        task.postId,
+        task.taskType,
+        task.retryCount,
+        task.createdAt.toIso8601String(),
+        task.lastAttemptAt?.toIso8601String(),
+        task.errorMessage,
+      ],
+    );
   }
 
   Future<List<AiTask>> getPendingAiTasks({int limit = 3}) async {
-    final db = await database;
-    final result = await db.query(
-      'ai_tasks',
-      where: 'retryCount < 5',
-      orderBy: 'createdAt ASC',
-      limit: limit,
-    );
-    return result.map((map) => AiTask.fromMap(map)).toList();
+    await _ensureSeeded();
+    final rows = await _database.customSelect(
+      '''
+      SELECT * FROM ai_tasks
+      ORDER BY createdAt ASC
+      LIMIT ?
+      ''',
+      variables: [Variable<int>(limit)],
+    ).get();
+    return rows.map((row) => AiTask.fromMap(row.data)).toList();
   }
 
   Future<int> updateAiTask(AiTask task) async {
-    final db = await database;
-    return await db.update(
-      'ai_tasks',
-      task.toMap(),
-      where: 'id = ?',
-      whereArgs: [task.id],
+    await _ensureSeeded();
+    if (task.id == null) {
+      return 0;
+    }
+    await _database.customStatement(
+      '''
+      UPDATE ai_tasks
+      SET postId = ?, taskType = ?, retryCount = ?, createdAt = ?,
+          lastAttemptAt = ?, errorMessage = ?
+      WHERE id = ?
+      ''',
+      [
+        task.postId,
+        task.taskType,
+        task.retryCount,
+        task.createdAt.toIso8601String(),
+        task.lastAttemptAt?.toIso8601String(),
+        task.errorMessage,
+        task.id,
+      ],
     );
+    return 1;
   }
 
   Future<int> deleteAiTask(int id) async {
-    final db = await database;
-    return await db.delete(
-      'ai_tasks',
-      where: 'id = ?',
-      whereArgs: [id],
+    await _ensureSeeded();
+    await _database.customStatement('DELETE FROM ai_tasks WHERE id = ?', [id]);
+    return 1;
+  }
+
+  Future<int> createScheduledNotification(
+      ScheduledNotification notification) async {
+    await _ensureSeeded();
+    return _insert(
+      '''
+      INSERT INTO scheduled_notifications (
+        postId, aiPersonaId, notificationType, commentContent, scheduledTime,
+        isDelivered, isRead, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        notification.postId,
+        notification.aiPersonaId,
+        notification.notificationType,
+        notification.commentContent,
+        notification.scheduledTime.toIso8601String(),
+        notification.isDelivered ? 1 : 0,
+        notification.isRead ? 1 : 0,
+        notification.createdAt.toIso8601String(),
+      ],
     );
   }
 
-  // ========== Scheduled Notifications ==========
-  Future<int> createScheduledNotification(ScheduledNotification notification) async {
-    final db = await database;
-    return await db.insert('scheduled_notifications', notification.toMap());
-  }
-
-  Future<List<ScheduledNotification>> getScheduledNotifications({bool? isDelivered}) async {
-    final db = await database;
-    final result = await db.query(
-      'scheduled_notifications',
-      where: isDelivered != null ? 'isDelivered = ?' : null,
-      whereArgs: isDelivered != null ? [isDelivered ? 1 : 0] : null,
-      orderBy: 'scheduledTime ASC',
-    );
-    return result.map((map) => ScheduledNotification.fromMap(map)).toList();
+  Future<List<ScheduledNotification>> getScheduledNotifications(
+      {bool? isDelivered}) async {
+    await _ensureSeeded();
+    final rows = await _database.customSelect(
+      '''
+      SELECT * FROM scheduled_notifications
+      ${isDelivered == null ? '' : 'WHERE isDelivered = ?'}
+      ORDER BY scheduledTime ASC
+      ''',
+      variables:
+          isDelivered == null ? const [] : [Variable<int>(isDelivered ? 1 : 0)],
+    ).get();
+    return rows.map((row) => ScheduledNotification.fromMap(row.data)).toList();
   }
 
   Future<ScheduledNotification?> getScheduledNotification(int id) async {
-    final db = await database;
-    final result = await db.query(
-      'scheduled_notifications',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    if (result.isEmpty) return null;
-    return ScheduledNotification.fromMap(result.first);
+    await _ensureSeeded();
+    final rows = await _database.customSelect(
+      'SELECT * FROM scheduled_notifications WHERE id = ? LIMIT 1',
+      variables: [Variable<int>(id)],
+    ).get();
+    if (rows.isEmpty) {
+      return null;
+    }
+    return ScheduledNotification.fromMap(rows.first.data);
   }
 
-  Future<int> updateScheduledNotification(ScheduledNotification notification) async {
-    final db = await database;
-    return await db.update(
-      'scheduled_notifications',
-      notification.toMap(),
-      where: 'id = ?',
-      whereArgs: [notification.id],
+  Future<int> updateScheduledNotification(
+      ScheduledNotification notification) async {
+    await _ensureSeeded();
+    if (notification.id == null) {
+      return 0;
+    }
+    await _database.customStatement(
+      '''
+      UPDATE scheduled_notifications
+      SET postId = ?, aiPersonaId = ?, notificationType = ?, commentContent = ?,
+          scheduledTime = ?, isDelivered = ?, isRead = ?, createdAt = ?
+      WHERE id = ?
+      ''',
+      [
+        notification.postId,
+        notification.aiPersonaId,
+        notification.notificationType,
+        notification.commentContent,
+        notification.scheduledTime.toIso8601String(),
+        notification.isDelivered ? 1 : 0,
+        notification.isRead ? 1 : 0,
+        notification.createdAt.toIso8601String(),
+        notification.id,
+      ],
     );
+    return 1;
   }
 
   Future<int> deleteScheduledNotification(int id) async {
-    final db = await database;
-    return await db.delete(
-      'scheduled_notifications',
-      where: 'id = ?',
-      whereArgs: [id],
+    await _ensureSeeded();
+    await _database.customStatement(
+      'DELETE FROM scheduled_notifications WHERE id = ?',
+      [id],
     );
+    return 1;
   }
 
   Future<int> getUnreadNotificationCount() async {
-    final db = await database;
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM scheduled_notifications WHERE isDelivered = 1 AND isRead = 0',
-    );
-    return Sqflite.firstIntValue(result) ?? 0;
+    await _ensureSeeded();
+    final row = await _database
+        .customSelect(
+          'SELECT COUNT(*) AS count FROM scheduled_notifications WHERE isRead = 0',
+        )
+        .getSingle();
+    return row.read<int>('count');
   }
 
   Future<int> markNotificationsAsRead(List<int> ids) async {
-    final db = await database;
-    if (ids.isEmpty) return 0;
-    final placeholders = List.filled(ids.length, '?').join(',');
-    return await db.rawUpdate(
-      'UPDATE scheduled_notifications SET isRead = 1 WHERE id IN ($placeholders)',
+    await _ensureSeeded();
+    if (ids.isEmpty) {
+      return 0;
+    }
+    await _database.customStatement(
+      'UPDATE scheduled_notifications SET isRead = 1 WHERE id IN (${List.filled(ids.length, '?').join(', ')})',
       ids,
     );
+    return ids.length;
   }
 
   Future<int> markAllNotificationsAsRead() async {
-    final db = await database;
-    return await db.rawUpdate(
-      'UPDATE scheduled_notifications SET isRead = 1 WHERE isDelivered = 1 AND isRead = 0',
+    await _ensureSeeded();
+    await _database.customStatement(
+      'UPDATE scheduled_notifications SET isRead = 1 WHERE isRead = 0',
+    );
+    return 1;
+  }
+
+  Future<int> createTask(Task task) async {
+    await _ensureSeeded();
+    return _insert(
+      '''
+      INSERT INTO tasks (
+        aiPersonaId, title, description, dueDate, recurrenceType, intervalDays,
+        weekdays, monthDay, time, isCompleted, lastNotificationDate, createdAt, completedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ''',
+      [
+        task.aiPersonaId,
+        task.title,
+        task.description,
+        task.dueDate?.toIso8601String(),
+        task.recurrenceType.index,
+        task.intervalDays,
+        task.weekdays?.join(','),
+        task.monthDay,
+        task.time,
+        task.isCompleted ? 1 : 0,
+        task.lastNotificationDate?.toIso8601String(),
+        task.createdAt.toIso8601String(),
+        task.completedAt?.toIso8601String(),
+      ],
     );
   }
 
-  // ========== Utility ==========
-  Future<void> close() async {
-    final db = await database;
-    await db.close();
+  Future<List<Task>> getAllTasks() async {
+    await _ensureSeeded();
+    final rows = await _database
+        .customSelect('SELECT * FROM tasks ORDER BY createdAt DESC')
+        .get();
+    return rows.map((row) => Task.fromMap(row.data)).toList();
   }
 
-  /// Debug method to print all database contents
+  Future<List<Task>> getActiveTasks() async {
+    await _ensureSeeded();
+    final rows = await _database
+        .customSelect(
+          'SELECT * FROM tasks WHERE isCompleted = 0 ORDER BY createdAt DESC',
+        )
+        .get();
+    return rows.map((row) => Task.fromMap(row.data)).toList();
+  }
+
+  Future<List<Task>> getRecurringTasks() async {
+    await _ensureSeeded();
+    final rows = await _database
+        .customSelect(
+          'SELECT * FROM tasks WHERE recurrenceType != 0 ORDER BY createdAt DESC',
+        )
+        .get();
+    return rows.map((row) => Task.fromMap(row.data)).toList();
+  }
+
+  Future<Task?> getTask(int id) async {
+    await _ensureSeeded();
+    final rows = await _database.customSelect(
+      'SELECT * FROM tasks WHERE id = ? LIMIT 1',
+      variables: [Variable<int>(id)],
+    ).get();
+    if (rows.isEmpty) {
+      return null;
+    }
+    return Task.fromMap(rows.first.data);
+  }
+
+  Future<int> updateTask(Task task) async {
+    await _ensureSeeded();
+    if (task.id == null) {
+      return 0;
+    }
+    await _database.customStatement(
+      '''
+      UPDATE tasks
+      SET aiPersonaId = ?, title = ?, description = ?, dueDate = ?, recurrenceType = ?,
+          intervalDays = ?, weekdays = ?, monthDay = ?, time = ?, isCompleted = ?,
+          lastNotificationDate = ?, createdAt = ?, completedAt = ?
+      WHERE id = ?
+      ''',
+      [
+        task.aiPersonaId,
+        task.title,
+        task.description,
+        task.dueDate?.toIso8601String(),
+        task.recurrenceType.index,
+        task.intervalDays,
+        task.weekdays?.join(','),
+        task.monthDay,
+        task.time,
+        task.isCompleted ? 1 : 0,
+        task.lastNotificationDate?.toIso8601String(),
+        task.createdAt.toIso8601String(),
+        task.completedAt?.toIso8601String(),
+        task.id,
+      ],
+    );
+    return 1;
+  }
+
+  Future<int> deleteTask(int id) async {
+    await _ensureSeeded();
+    await _database.customStatement('DELETE FROM tasks WHERE id = ?', [id]);
+    return 1;
+  }
+
+  Future<int> completeTask(int id) async {
+    await _ensureSeeded();
+    await _database.customStatement(
+      'UPDATE tasks SET isCompleted = 1, completedAt = ? WHERE id = ?',
+      [DateTime.now().toIso8601String(), id],
+    );
+    return 1;
+  }
+
   Future<void> printAllDatabaseContents() async {
-    final db = await database;
+    await _ensureSeeded();
+    const tables = [
+      'posts',
+      'comments',
+      'likes',
+      'tag_settings',
+      'ai_tasks',
+      'scheduled_notifications',
+      'tasks',
+    ];
 
-    print('\n========== DATABASE CONTENTS ==========\n');
-
-    // Get database path
-    final dbPath = await getDatabasesPath();
-    print('Database Location: $dbPath/social_media.db\n');
-
-    // Posts
-    final posts = await db.query('posts');
-    print('========== POSTS (${posts.length}) ==========');
-    for (var post in posts) {
-      print(post);
+    for (final table in tables) {
+      final rows = await _database.customSelect('SELECT * FROM $table').get();
+      // ignore: avoid_print
+      print('TABLE: $table');
+      for (final row in rows) {
+        // ignore: avoid_print
+        print(row.data);
+      }
     }
-    print('');
+  }
 
-    // Comments
-    final comments = await db.query('comments');
-    print('========== COMMENTS (${comments.length}) ==========');
-    for (var comment in comments) {
-      print(comment);
-    }
-    print('');
+  Future<void> close() => _database.close();
 
-    // Likes
-    final likes = await db.query('likes');
-    print('========== LIKES (${likes.length}) ==========');
-    for (var like in likes) {
-      print(like);
-    }
-    print('');
-
-    // AI Personas
-    final personas = await db.query('ai_personas');
-    print('========== AI PERSONAS (${personas.length}) ==========');
-    for (var persona in personas) {
-      print(persona);
-    }
-    print('');
-
-    // Chat Messages
-    final messages = await db.query('chat_messages');
-    print('========== CHAT MESSAGES (${messages.length}) ==========');
-    for (var message in messages) {
-      print(message);
-    }
-    print('');
-
-    // Tag Settings
-    final tagSettings = await db.query('tag_settings');
-    print('========== TAG SETTINGS (${tagSettings.length}) ==========');
-    for (var setting in tagSettings) {
-      print(setting);
-    }
-    print('');
-
-    // AI Tasks
-    final aiTasks = await db.query('ai_tasks');
-    print('========== AI TASKS (${aiTasks.length}) ==========');
-    for (var task in aiTasks) {
-      print(task);
-    }
-    print('');
-
-    // Scheduled Notifications
-    final scheduledNotifications = await db.query('scheduled_notifications');
-    print('========== SCHEDULED NOTIFICATIONS (${scheduledNotifications.length}) ==========');
-    for (var notification in scheduledNotifications) {
-      print(notification);
-    }
-    print('');
-
-    print('========== END OF DATABASE ==========\n');
+  Future<int> _insert(String sql, List<Object?> args) async {
+    await _database.customStatement(sql, args);
+    final row = await _database
+        .customSelect('SELECT last_insert_rowid() AS id')
+        .getSingle();
+    return row.read<int>('id');
   }
 }

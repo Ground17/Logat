@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(flutter pub get:*)"
+      "Bash(flutter pub get:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(grep -v \"^$\")",
+      "WebSearch",
+      "WebFetch(domain:ai.google.dev)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

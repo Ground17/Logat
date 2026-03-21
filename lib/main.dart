@@ -1,96 +1,58 @@
 import 'package:flutter/material.dart';
-import 'screens/feed_screen.dart';
-import 'screens/terms_agreement_screen.dart';
-import 'screens/post_detail_screen.dart';
-import 'services/settings_service.dart';
-import 'services/notification_scheduler_service.dart';
-import 'services/ai_task_queue_service.dart';
-import 'utils/media_migration.dart';
-import 'database/database_helper.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// Global navigator key for accessing navigation from anywhere
+import 'diary/models/notification_settings.dart';
+import 'diary/services/memories_notification_service.dart';
+import 'diary/screens/diary_home_screen.dart';
+
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() {
-  runApp(const MyApp());
+Future<void> _scheduleDefaultNotificationsOnFirstRun() async {
+  final prefs = await SharedPreferences.getInstance();
+  const firstRunKey = 'notifications_default_scheduled_v1';
+  if (prefs.getBool(firstRunKey) == true) return;
+
+  // Schedule On This Day notification with default settings (enabled=true)
+  final memoriesSettings = await MemoriesNotificationSettings.load();
+  if (memoriesSettings.enabled) {
+    await MemoriesNotificationService().schedule(memoriesSettings);
+  }
+
+  await prefs.setBool(firstRunKey, true);
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _scheduleDefaultNotificationsOnFirstRun();
+  runApp(const ProviderScope(child: DiaryApp()));
+}
+
+class DiaryApp extends StatelessWidget {
+  const DiaryApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
       title: 'Logat',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: const Color(0xFF2F6B5F),
           brightness: Brightness.light,
         ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: const Color(0xFF2F6B5F),
           brightness: Brightness.dark,
         ),
       ),
       themeMode: ThemeMode.system,
-      home: const SplashScreen(),
-      debugShowCheckedModeBanner: false,
-    );
-  }
-}
-
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({Key? key}) : super(key: key);
-
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> {
-  @override
-  void initState() {
-    super.initState();
-    _checkFirstTime();
-  }
-
-  Future<void> _checkFirstTime() async {
-    // Initialize notification system FIRST
-    await NotificationSchedulerService.instance.initialize();
-
-    // Process overdue notifications (deliver immediately)
-    await NotificationSchedulerService.instance.processOverdueNotifications();
-
-    // Process pending AI tasks in background (don't await)
-    AiTaskQueueService.instance.processPendingTasks();
-
-    // Check and migrate media files to permanent storage
-    await MediaMigration.logMediaStats();
-    await MediaMigration.checkAndMigratePostMedia();
-
-    final isFirstTime = await SettingsService.isFirstTime();
-
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) =>
-              isFirstTime ? const TermsAgreementScreen() : const FeedScreen(),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: CircularProgressIndicator(),
-      ),
+      home: const DiaryHomeScreen(),
     );
   }
 }

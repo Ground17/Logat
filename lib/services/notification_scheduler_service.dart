@@ -1,11 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:path_provider/path_provider.dart';
 import '../database/database_helper.dart';
 import '../models/scheduled_notification.dart';
 import '../models/like.dart';
@@ -65,6 +64,8 @@ class NotificationSchedulerService {
 
     // Initialize timezone database
     tz.initializeTimeZones();
+    final String localTz = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(localTz));
 
     // Initialize notification plugin
     const androidSettings =
@@ -205,84 +206,17 @@ class NotificationSchedulerService {
     String title = 'New notification';
     String body = '';
 
-    if (notification.aiPersonaId != null) {
-      final persona =
-          await DatabaseHelper.instance.getPersona(notification.aiPersonaId!);
-      if (persona != null) {
-        if (notification.notificationType == 'like') {
-          title = '${persona.name} liked your post';
-          body = 'Check out who liked your post!';
-        } else if (notification.notificationType == 'comment') {
-          title = '${persona.name} commented on your post';
-          body = notification.commentContent ?? 'New comment on your post';
-        }
-      }
+    if (notification.notificationType == 'like') {
+      title = 'AI liked your post';
+      body = 'Check out who liked your post!';
+    } else if (notification.notificationType == 'comment') {
+      title = 'AI commented on your post';
+      body = notification.commentContent ?? 'New comment on your post';
     }
 
-    // Get AI persona avatar image if available
-    String? largeIconPath;
-    String? attachmentPath;
-    try {
-      if (notification.aiPersonaId != null) {
-        final persona = await DatabaseHelper.instance.getPersona(notification.aiPersonaId!);
-        if (persona != null) {
-          final avatarText = persona.avatar;
-          print('📸 AI persona avatar: "$avatarText"');
-
-          // Check if avatar is an image file (not emoji)
-          if (avatarText.isNotEmpty &&
-              !avatarText.contains('/') &&
-              (avatarText.endsWith('.png') ||
-               avatarText.endsWith('.jpg') ||
-               avatarText.endsWith('.jpeg') ||
-               avatarText.endsWith('.webp'))) {
-            // Combine Documents directory with filename
-            final appDir = await getApplicationDocumentsDirectory();
-            final fullPath = '${appDir.path}/$avatarText';
-            print('📁 Full avatar image path: $fullPath');
-
-            final file = File(fullPath);
-            final exists = await file.exists();
-            print('📂 File exists: $exists');
-
-            if (exists) {
-              final fileSize = await file.length();
-              print('📏 File size: ${fileSize / 1024} KB');
-
-              if (fileSize > 10 * 1024 * 1024) {
-                print('⚠️ File too large for iOS notification (>10MB)');
-              } else {
-                largeIconPath = fullPath;
-                attachmentPath = fullPath;
-                print('✅ Using AI persona avatar for notification: $fullPath');
-              }
-            } else {
-              print('⚠️ Avatar image file not found at: $fullPath');
-            }
-          } else if (avatarText.contains('/')) {
-            // Already a full path
-            final file = File(avatarText);
-            final exists = await file.exists();
-            print('📂 File exists at full path: $exists');
-
-            if (exists) {
-              final fileSize = await file.length();
-              print('📏 File size: ${fileSize / 1024} KB');
-
-              if (fileSize <= 10 * 1024 * 1024) {
-                largeIconPath = avatarText;
-                attachmentPath = avatarText;
-                print('✅ Using AI persona avatar (full path) for notification');
-              }
-            }
-          } else {
-            print('ℹ️ Avatar is emoji, not using for notification icon');
-          }
-        }
-      }
-    } catch (e) {
-      print('❌ Could not load AI persona avatar: $e');
-    }
+    // Persona avatar lookup removed - personas no longer exist
+    const String? largeIconPath = null;
+    const String? attachmentPath = null;
 
     // Schedule the notification
     final tzScheduledTime = tz.TZDateTime.from(
@@ -356,83 +290,17 @@ class NotificationSchedulerService {
         String title = 'New notification';
         String body = '';
 
-        if (notification.aiPersonaId != null) {
-          final persona =
-              await DatabaseHelper.instance.getPersona(notification.aiPersonaId!);
-          if (persona != null) {
-            if (notification.notificationType == 'like') {
-              title = '${persona.name} liked your post';
-              body = 'Check out who liked your post!';
-            } else if (notification.notificationType == 'comment') {
-              title = '${persona.name} commented on your post';
-              body = notification.commentContent ?? 'New comment on your post';
-            }
-          }
+        if (notification.notificationType == 'like') {
+          title = 'AI liked your post';
+          body = 'Check out who liked your post!';
+        } else if (notification.notificationType == 'comment') {
+          title = 'AI commented on your post';
+          body = notification.commentContent ?? 'New comment on your post';
         }
 
-        // Get AI persona avatar image if available
-        String? largeIconPath;
-        String? attachmentPath;
-        try {
-          if (notification.aiPersonaId != null) {
-            final personaForImage = await DatabaseHelper.instance.getPersona(notification.aiPersonaId!);
-            if (personaForImage != null) {
-              final avatarText = personaForImage.avatar;
-              print('📸 [Immediate] AI persona avatar: "$avatarText"');
-
-              // Check if avatar is an image file (not emoji)
-              if (avatarText.isNotEmpty &&
-                  !avatarText.contains('/') &&
-                  (avatarText.endsWith('.png') ||
-                   avatarText.endsWith('.jpg') ||
-                   avatarText.endsWith('.jpeg') ||
-                   avatarText.endsWith('.webp'))) {
-                // Combine Documents directory with filename
-                final appDir = await getApplicationDocumentsDirectory();
-                final fullPath = '${appDir.path}/$avatarText';
-                print('📁 [Immediate] Full avatar image path: $fullPath');
-
-                final file = File(fullPath);
-                final exists = await file.exists();
-                print('📂 [Immediate] File exists: $exists');
-
-                if (exists) {
-                  final fileSize = await file.length();
-                  print('📏 [Immediate] File size: ${fileSize / 1024} KB');
-
-                  if (fileSize <= 10 * 1024 * 1024) {
-                    largeIconPath = fullPath;
-                    attachmentPath = fullPath;
-                    print('✅ [Immediate] Using AI persona avatar for notification');
-                  }
-                } else {
-                  print('⚠️ [Immediate] Avatar image file not found');
-                }
-              } else if (avatarText.contains('/')) {
-                // Already a full path
-                final file = File(avatarText);
-                final exists = await file.exists();
-                print('📂 [Immediate] File exists at full path: $exists');
-
-                if (exists) {
-                  final fileSize = await file.length();
-                  print('📏 [Immediate] File size: ${fileSize / 1024} KB');
-
-                  if (fileSize <= 10 * 1024 * 1024) {
-                    largeIconPath = avatarText;
-                    attachmentPath = avatarText;
-                    print('✅ [Immediate] Using AI persona avatar (full path) for notification');
-                  }
-                }
-              } else {
-                print('ℹ️ [Immediate] Avatar is emoji, not using for notification icon');
-              }
-            }
-          }
-        } catch (e) {
-          print('❌ Could not load AI persona avatar for immediate notification: $e');
-        }
-
+        // Persona avatar lookup removed - personas no longer exist
+        const String? largeIconPath = null;
+        const String? attachmentPath = null;
         // Show immediate notification
         await _notifications.show(
           notificationId,

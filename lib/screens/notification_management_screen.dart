@@ -1,10 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import '../database/database_helper.dart';
 import '../models/scheduled_notification.dart';
-import '../models/ai_persona.dart';
 import '../services/notification_scheduler_service.dart';
 import 'post_detail_screen.dart';
 
@@ -20,7 +17,6 @@ class _NotificationManagementScreenState
     extends State<NotificationManagementScreen> {
   List<ScheduledNotification> _pendingNotifications = [];
   List<ScheduledNotification> _deliveredNotifications = [];
-  final Map<int, AiPersona?> _personaCache = {};
   bool _isLoading = true;
   int _deliveredDisplayLimit = 10; // Show 10 delivered notifications initially
 
@@ -43,19 +39,6 @@ class _NotificationManagementScreenState
         ..sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
       final delivered = allNotifications.where((n) => n.isDelivered).toList()
         ..sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
-
-      // Load persona details
-      final personaIds = allNotifications
-          .map((n) => n.aiPersonaId)
-          .where((id) => id != null)
-          .toSet();
-
-      for (final personaId in personaIds) {
-        if (!_personaCache.containsKey(personaId)) {
-          final persona = await DatabaseHelper.instance.getPersona(personaId!);
-          _personaCache[personaId] = persona;
-        }
-      }
 
       // Mark all delivered notifications as read
       final deliveredIds = delivered.map((n) => n.id!).toList();
@@ -167,33 +150,9 @@ class _NotificationManagementScreenState
     }
   }
 
-  Future<String> _getAvatarPath(String avatarText) async {
-    // If already a full path, return as is
-    if (avatarText.contains('/')) {
-      return avatarText;
-    }
-
-    // If it's a filename, combine with Documents directory
-    if (avatarText.endsWith('.png') ||
-        avatarText.endsWith('.jpg') ||
-        avatarText.endsWith('.jpeg') ||
-        avatarText.endsWith('.webp')) {
-      final appDir = await getApplicationDocumentsDirectory();
-      return '${appDir.path}/$avatarText';
-    }
-
-    // Otherwise, it's an emoji
-    return avatarText;
-  }
-
   Widget _buildNotificationCard(ScheduledNotification notification,
       {required bool isPending}) {
-    final persona = notification.aiPersonaId != null
-        ? _personaCache[notification.aiPersonaId!]
-        : null;
-
-    final personaName = persona?.name ?? 'AI';
-    final personaAvatar = persona?.avatar ?? '🤖';
+    const personaName = 'AI';
 
     String title;
     String subtitle;
@@ -210,15 +169,6 @@ class _NotificationManagementScreenState
     final timeInfo = isPending
         ? 'Scheduled for ${dateFormat.format(notification.scheduledTime)}'
         : 'Delivered ${dateFormat.format(notification.scheduledTime)}';
-
-    // Check if avatar is an image path (filename or full path)
-    final bool isImagePath = (personaAvatar.contains('/') ||
-            !personaAvatar
-                .contains(RegExp(r'[\u{1F300}-\u{1F9FF}]', unicode: true))) &&
-        (personaAvatar.endsWith('.png') ||
-            personaAvatar.endsWith('.jpg') ||
-            personaAvatar.endsWith('.jpeg') ||
-            personaAvatar.endsWith('.webp'));
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -237,36 +187,10 @@ class _NotificationManagementScreenState
             );
           }
         },
-        leading: isImagePath
-            ? FutureBuilder<String>(
-                future: _getAvatarPath(personaAvatar),
-                builder: (context, snapshot) {
-                  if (snapshot.hasData) {
-                    final avatarPath = snapshot.data!;
-                    final file = File(avatarPath);
-                    return CircleAvatar(
-                      backgroundColor:
-                          Theme.of(context).colorScheme.primaryContainer,
-                      backgroundImage:
-                          file.existsSync() ? FileImage(file) : null,
-                      child:
-                          !file.existsSync() ? const Icon(Icons.person) : null,
-                    );
-                  }
-                  return CircleAvatar(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.primaryContainer,
-                    child: const CircularProgressIndicator(strokeWidth: 2),
-                  );
-                },
-              )
-            : CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                child: Text(
-                  personaAvatar,
-                  style: const TextStyle(fontSize: 24),
-                ),
-              ),
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          child: const Text('🤖', style: TextStyle(fontSize: 24)),
+        ),
         title: Text(
           title,
           style: TextStyle(

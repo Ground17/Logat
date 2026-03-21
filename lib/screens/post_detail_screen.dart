@@ -4,12 +4,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/post.dart';
 import '../models/comment.dart';
 import '../models/like.dart';
-import '../models/ai_persona.dart';
 import '../database/database_helper.dart';
-import '../widgets/avatar_widget.dart';
 import '../widgets/video_player_widget.dart';
-import 'chat_screen.dart';
 import 'edit_post_screen.dart';
+import 'post_share_screen.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -28,7 +26,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final TextEditingController _commentController = TextEditingController();
   List<Comment> _comments = [];
   List<Like> _likes = [];
-  Map<int, AiPersona> _personas = {};
   bool _isLoading = true;
   bool _userLiked = false;
   late Post _post;
@@ -63,18 +60,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 사용자가 좋아요를 눌렀는지 확인
     final userLiked = likes.any((like) => like.isUser);
 
-    // AI 페르소나 정보 로드
-    final allPersonas = await _db.getAllPersonas();
-    final personaMap = <int, AiPersona>{};
-    for (var persona in allPersonas) {
-      personaMap[persona.id!] = persona;
-    }
-
     setState(() {
       _comments = comments;
       _likes = likes;
       _userLiked = userLiked;
-      _personas = personaMap;
       _isLoading = false;
     });
   }
@@ -161,6 +150,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       appBar: AppBar(
         title: const Text('Post'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.share_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PostShareScreen(post: _post),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed: _editPost,
@@ -307,8 +305,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ],
 
+                        if (_post.keywords.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: _post.keywords.map((kw) {
+                              return Chip(
+                                label: Text('#$kw',
+                                    style: const TextStyle(fontSize: 13)),
+                                padding: EdgeInsets.zero,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                              );
+                            }).toList(),
+                          ),
+                        ],
+
                         // Map display if latitude/longitude exist
-                        if (_post.latitude != null && _post.longitude != null) ...[
+                        if (_post.latitude != null &&
+                            _post.longitude != null) ...[
                           const SizedBox(height: 12),
                           Container(
                             height: 200,
@@ -319,19 +335,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             clipBehavior: Clip.antiAlias,
                             child: GoogleMap(
                               initialCameraPosition: CameraPosition(
-                                target: LatLng(_post.latitude!, _post.longitude!),
+                                target:
+                                    LatLng(_post.latitude!, _post.longitude!),
                                 zoom: 15,
                               ),
                               markers: {
                                 Marker(
                                   markerId: const MarkerId('post_location'),
-                                  position: LatLng(_post.latitude!, _post.longitude!),
+                                  position:
+                                      LatLng(_post.latitude!, _post.longitude!),
                                   infoWindow: InfoWindow(
                                     title: _post.locationName ?? 'Location',
                                   ),
                                 ),
                               },
-                              zoomControlsEnabled: false,
+                              zoomControlsEnabled: true,
                               myLocationButtonEnabled: false,
                               mapToolbarEnabled: false,
                             ),
@@ -368,38 +386,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   label: Text('You'),
                                 );
                               }
-                              final persona = _personas[like.aiPersonaId];
-                              if (persona == null)
-                                return const SizedBox.shrink();
-                              return Chip(
-                                avatar: AvatarWidget(
-                                  avatar: persona.avatar,
-                                  size: 24,
-                                ),
-                                label: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(persona.name),
-                                    const SizedBox(width: 4),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 3, vertical: 0),
-                                      decoration: BoxDecoration(
-                                        color: Colors.blue,
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                      child: const Text(
-                                        'AI',
-                                        style: TextStyle(
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
+                              return const SizedBox.shrink();
                             }).toList(),
                           ),
                         ],
@@ -492,28 +479,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 );
                               }
 
-                              final persona = _personas[comment.aiPersonaId];
-                              if (persona == null)
+                              if (!comment.isUser)
                                 return const SizedBox.shrink();
-
-                              return CommentCard(
-                                comment: comment,
-                                persona: persona,
-                                onDelete: () async {
-                                  await _db.deleteComment(comment.id!);
-                                  _loadData();
-                                },
-                                onTapPersona: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => ChatScreen(
-                                        persona: persona,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              );
+                              // Already handled by UserCommentCard above, this branch won't be reached
+                              return const SizedBox.shrink();
                             },
                           ),
                       ],
@@ -686,148 +655,6 @@ class _UserCommentCardState extends State<UserCommentCard> {
                 ),
               ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-
-    if (diff.inDays > 0) {
-      return '${diff.inDays}d ago';
-    } else if (diff.inHours > 0) {
-      return '${diff.inHours}h ago';
-    } else if (diff.inMinutes > 0) {
-      return '${diff.inMinutes}m ago';
-    } else {
-      return 'Just now';
-    }
-  }
-}
-
-class CommentCard extends StatelessWidget {
-  final Comment comment;
-  final AiPersona persona;
-  final VoidCallback onTapPersona;
-  final VoidCallback onDelete;
-
-  const CommentCard({
-    Key? key,
-    required this.comment,
-    required this.persona,
-    required this.onTapPersona,
-    required this.onDelete,
-  }) : super(key: key);
-
-  void _confirmDelete(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete AI Comment'),
-        content: const Text('Are you sure you want to delete this AI comment?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              onDelete();
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                InkWell(
-                  onTap: onTapPersona,
-                  child: Row(
-                    children: [
-                      AvatarWidget(
-                        avatar: persona.avatar,
-                        size: 40,
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                persona.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue,
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                                child: const Text(
-                                  'AI',
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Text(
-                            persona.role,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.delete, size: 18),
-                  onPressed: () => _confirmDelete(context),
-                  color: Colors.red,
-                  tooltip: 'Delete',
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(comment.content),
-            const SizedBox(height: 4),
-            Text(
-              _formatDate(comment.createdAt),
-              style: const TextStyle(
-                fontSize: 11,
-                color: Colors.grey,
-              ),
-            ),
           ],
         ),
       ),

@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:native_exif/native_exif.dart';
@@ -10,7 +10,6 @@ import 'package:intl/intl.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import '../models/post.dart';
 import '../database/database_helper.dart';
-import '../services/ai_service.dart';
 import '../widgets/address_search_field.dart';
 import '../widgets/video_player_widget.dart';
 import '../widgets/video_thumbnail_widget.dart';
@@ -40,8 +39,12 @@ class _EditPostScreenState extends State<EditPostScreen> {
   double? _latitude;
   double? _longitude;
   String? _selectedTag;
+  List<String> _keywords = [];
+  bool _loadingKeywords = false;
+  final _keywordController = TextEditingController();
   DateTime? _postDate;
   static const int maxMediaCount = 20;
+  static const int maxKeywords = 10;
 
   @override
   void initState() {
@@ -53,6 +56,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
     _latitude = widget.post.latitude;
     _longitude = widget.post.longitude;
     _selectedTag = widget.post.tag;
+    _keywords = List.from(widget.post.keywords);
     _postDate = widget.post.postDate;
   }
 
@@ -61,6 +65,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
     _titleController.dispose();
     _captionController.dispose();
     _locationController.dispose();
+    _keywordController.dispose();
     super.dispose();
   }
 
@@ -420,192 +425,86 @@ class _EditPostScreenState extends State<EditPostScreen> {
     }
   }
 
-  /// Generate AI image from prompt
-  Future<void> _generateAiImage() async {
-    if (_mediaPaths.length >= maxMediaCount) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Maximum $maxMediaCount media files allowed')),
-        );
-      }
-      return;
-    }
-
-    final controller = TextEditingController();
-    final description = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Generate AI Image'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Describe the image you want to generate:'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'e.g., A beautiful sunset over mountains',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Generate'),
-          ),
-        ],
-      ),
-    );
-
-    if (description != null && description.isNotEmpty) {
-      // Show loading dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-
-      try {
-        final imageName = await AiService.generateAvatarImage(
-          description: description,
-        );
-
-        if (mounted) {
-          Navigator.pop(context); // Close loading dialog
-
-          final appDir = await getApplicationDocumentsDirectory();
-
-          if (imageName != null) {
-            setState(() {
-              _mediaPaths.add('${appDir.path}/$imageName');
-            });
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('AI image generated successfully!'),
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to generate image. Please try again.'),
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          Navigator.pop(context); // Close loading dialog
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error generating image: $e'),
-            ),
-          );
-        }
-      }
-    }
+  void _addKeyword(String kw) {
+    final trimmed = kw.trim();
+    if (trimmed.isEmpty || _keywords.contains(trimmed)) return;
+    if (_keywords.length >= maxKeywords) return;
+    setState(() {
+      _keywords.add(trimmed);
+      _keywordController.clear();
+    });
   }
 
-  /// Show dialog for custom edit prompt
-  void _showEditPrompt(int imageIndex) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Image with AI'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Describe the edits you want to make:'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'e.g., Make the background darker, add more contrast',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _editImageWithAI(imageIndex, controller.text);
-            },
-            child: const Text('Apply Edit'),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _suggestKeywordsWithAi() async {
+    final title = _titleController.text.trim();
+    final caption = _captionController.text.trim();
+    final location = _locationController.text.trim();
+    if (title.isEmpty && caption.isEmpty && location.isEmpty) return;
 
-  /// Edit image using AI
-  Future<void> _editImageWithAI(int imageIndex, String editPrompt) async {
-    final imagePath = _mediaPaths[imageIndex];
-
-    // Show loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
-
+    setState(() => _loadingKeywords = true);
     try {
-      final editedFileName = await AiService.editAvatarImage(
-        imagePath: imagePath,
-        editPrompt: editPrompt,
+      final prompt = '''
+Post info:
+- Title: ${title.isEmpty ? '(none)' : title}
+- Caption: ${caption.isEmpty ? '(none)' : caption}
+- Location: ${location.isEmpty ? '(none)' : location}
+
+Suggest 5 concise keyword tags for this post.
+Return ONLY a JSON array of strings, e.g. ["travel","sunset","friends"]
+''';
+      final url = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$GEMINI_KEYS',
+      );
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'contents': [
+            {
+              'role': 'user',
+              'parts': [
+                {'text': prompt}
+              ],
+            }
+          ],
+          'generationConfig': {
+            'temperature': 0.5,
+            'responseMimeType': 'application/json',
+          },
+        }),
       );
 
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-
-        final appDir = await getApplicationDocumentsDirectory();
-
-        if (editedFileName != null) {
-          setState(() {
-            _mediaPaths[imageIndex] = '${appDir.path}/$editedFileName';
-          });
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Image edited successfully!'),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to edit image. Please try again.'),
-            ),
-          );
-        }
+      if (response.statusCode == 200 && mounted) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final text =
+            data['candidates'][0]['content']['parts'][0]['text'] as String;
+        final cleaned = text
+            .replaceAll(RegExp(r'```json\s*'), '')
+            .replaceAll(RegExp(r'```\s*'), '')
+            .trim();
+        final suggestions = jsonDecode(cleaned) as List<dynamic>;
+        _showKeywordSuggestions(
+            suggestions.map((s) => s.toString()).toList());
       }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error editing image: $e'),
-          ),
-        );
-      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _loadingKeywords = false);
     }
+  }
+
+  void _showKeywordSuggestions(List<String> suggestions) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => _KeywordSuggestionsSheet(
+        suggestions: suggestions,
+        existing: _keywords,
+        onAdd: (kw) {
+          if (!_keywords.contains(kw) && _keywords.length < maxKeywords) {
+            setState(() => _keywords.add(kw));
+          }
+        },
+      ),
+    );
   }
 
   Future<void> _savePost() async {
@@ -635,6 +534,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
         latitude: _latitude,
         longitude: _longitude,
         tag: _selectedTag,
+        keywords: _keywords,
         postDate: _postDate,
         // enableAiReactions는 수정하지 않음 - 기존 값 유지
         updatedAt: DateTime.now(),
@@ -753,22 +653,6 @@ class _EditPostScreenState extends State<EditPostScreen> {
                                       ),
                               ),
                             ),
-                            // Edit button for images only (top-right, before close button)
-                            if (!isVideo)
-                              Positioned(
-                                top: 4,
-                                right: 36,
-                                child: IconButton(
-                                  onPressed: () => _showEditPrompt(index),
-                                  icon: const Icon(Icons.auto_awesome,
-                                      color: Colors.white),
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: Colors.black54,
-                                    padding: const EdgeInsets.all(4),
-                                    minimumSize: const Size(28, 28),
-                                  ),
-                                ),
-                              ),
                             // Close button (top-right corner)
                             Positioned(
                               top: 4,
@@ -829,14 +713,6 @@ class _EditPostScreenState extends State<EditPostScreen> {
                           onPressed: () => _pickMedia(ImageSource.camera),
                           icon: const Icon(Icons.camera_alt),
                           label: const Text('Camera'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _generateAiImage,
-                          icon: const Icon(Icons.auto_awesome),
-                          label: const Text('AI Image'),
                         ),
                       ),
                     ],
@@ -995,6 +871,77 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
+
+                  // Keyword Tags
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Keywords (${_keywords.length}/$maxKeywords)',
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w500),
+                          ),
+                          const Spacer(),
+                          _loadingKeywords
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                )
+                              : TextButton.icon(
+                                  onPressed: _suggestKeywordsWithAi,
+                                  icon: const Icon(Icons.auto_awesome,
+                                      size: 16),
+                                  label: const Text('AI Suggest'),
+                                ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (_keywords.isNotEmpty)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: _keywords
+                              .map((kw) => Chip(
+                                    label: Text('#$kw'),
+                                    deleteIcon: const Icon(Icons.close,
+                                        size: 14),
+                                    onDeleted: () =>
+                                        setState(() => _keywords.remove(kw)),
+                                  ))
+                              .toList(),
+                        ),
+                      if (_keywords.isNotEmpty) const SizedBox(height: 8),
+                      if (_keywords.length < maxKeywords)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _keywordController,
+                                decoration: const InputDecoration(
+                                  hintText: 'Add keyword...',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                ),
+                                onSubmitted: _addKeyword,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton.filled(
+                              onPressed: () =>
+                                  _addKeyword(_keywordController.text),
+                              icon: const Icon(Icons.add),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -1041,6 +988,74 @@ class _EditPostScreenState extends State<EditPostScreen> {
                         ),
                       ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Keyword suggestions bottom sheet ─────────────────────────────────────
+
+class _KeywordSuggestionsSheet extends StatefulWidget {
+  const _KeywordSuggestionsSheet({
+    required this.suggestions,
+    required this.existing,
+    required this.onAdd,
+  });
+
+  final List<String> suggestions;
+  final List<String> existing;
+  final void Function(String) onAdd;
+
+  @override
+  State<_KeywordSuggestionsSheet> createState() =>
+      _KeywordSuggestionsSheetState();
+}
+
+class _KeywordSuggestionsSheetState
+    extends State<_KeywordSuggestionsSheet> {
+  late final Set<String> _added = Set.from(widget.existing);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'AI Suggested Keywords',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: widget.suggestions.map((kw) {
+              final isAdded = _added.contains(kw);
+              return FilterChip(
+                label: Text('#$kw'),
+                selected: isAdded,
+                onSelected: (selected) {
+                  if (selected && !isAdded) {
+                    widget.onAdd(kw);
+                    setState(() => _added.add(kw));
+                  }
+                },
+                selectedColor:
+                    Theme.of(context).colorScheme.primaryContainer,
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
             ),
           ),
         ],

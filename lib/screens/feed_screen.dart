@@ -9,12 +9,14 @@ import '../models/post.dart';
 import '../database/database_helper.dart';
 import '../widgets/video_player_widget.dart';
 import '../utils/marker_generator.dart';
+import '../utils/tag_helper.dart';
 import '../services/notification_scheduler_service.dart';
 import 'post_detail_screen.dart';
 import 'create_post_screen.dart';
 import 'friends_screen.dart';
 import 'settings_screen.dart';
 import 'notification_management_screen.dart';
+import 'tasks_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({Key? key}) : super(key: key);
@@ -48,6 +50,7 @@ class _FeedScreenState extends State<FeedScreen> {
   bool _filterWithMedia = false;
   DateTime? _dateRangeStart;
   DateTime? _dateRangeEnd;
+  String _keywordFilter = '';
 
   // Sort order
   SortOrder _sortOrder = SortOrder.dateDesc;
@@ -119,13 +122,15 @@ class _FeedScreenState extends State<FeedScreen> {
         _filterSimilarDate = prefs.getBool('filterSimilarDate') ?? false;
         _filterWithLocation = prefs.getBool('filterWithLocation') ?? false;
         _filterWithMedia = prefs.getBool('filterWithMedia') ?? false;
+        _keywordFilter = prefs.getString('keywordFilter') ?? '';
         _sortOrder = SortOrder
             .values[prefs.getInt('sortOrder') ?? SortOrder.dateDesc.index];
         _dateFilterType = DateFilterType.values[
             prefs.getInt('dateFilterType') ?? DateFilterType.postDate.index];
 
         // 저장된 보기 모드 복원
-        _viewMode = ViewMode.values[prefs.getInt('viewMode') ?? ViewMode.list.index];
+        _viewMode =
+            ViewMode.values[prefs.getInt('viewMode') ?? ViewMode.list.index];
 
         // 저장된 태그 복원
         final savedTags = prefs.getStringList('selectedTags');
@@ -156,6 +161,7 @@ class _FeedScreenState extends State<FeedScreen> {
       await prefs.setBool('filterSimilarDate', _filterSimilarDate);
       await prefs.setBool('filterWithLocation', _filterWithLocation);
       await prefs.setBool('filterWithMedia', _filterWithMedia);
+      await prefs.setString('keywordFilter', _keywordFilter);
       await prefs.setInt('sortOrder', _sortOrder.index);
       await prefs.setInt('dateFilterType', _dateFilterType.index);
       await prefs.setStringList('selectedTags', _selectedTags.toList());
@@ -279,6 +285,14 @@ class _FeedScreenState extends State<FeedScreen> {
       filtered = filtered.where((post) => post.mediaPaths.isNotEmpty).toList();
     }
 
+    // Apply keyword filter
+    if (_keywordFilter.isNotEmpty) {
+      final kw = _keywordFilter.toLowerCase();
+      filtered = filtered.where((post) {
+        return post.keywords.any((k) => k.toLowerCase().contains(kw));
+      }).toList();
+    }
+
     // Apply date range filter
     if (_dateRangeStart != null && _dateRangeEnd != null) {
       filtered = filtered.where((post) {
@@ -365,8 +379,10 @@ class _FeedScreenState extends State<FeedScreen> {
     DateTime? tempDateRangeEnd = _dateRangeEnd;
     DateFilterType tempDateFilterType = _dateFilterType;
     SortOrder tempSortOrder = _sortOrder;
+    String tempKeywordFilter = _keywordFilter;
 
     final tempSearchController = TextEditingController(text: _searchQuery);
+    final tempKeywordController = TextEditingController(text: _keywordFilter);
     bool isControllerDisposed = false;
 
     showDialog(
@@ -390,6 +406,21 @@ class _FeedScreenState extends State<FeedScreen> {
                   onChanged: (value) {
                     setDialogState(() {
                       tempSearchQuery = value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Keyword filter
+                TextField(
+                  controller: tempKeywordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Filter by keyword tag',
+                    prefixIcon: Icon(Icons.tag),
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      tempKeywordFilter = value;
                     });
                   },
                 ),
@@ -627,6 +658,8 @@ class _FeedScreenState extends State<FeedScreen> {
                 setDialogState(() {
                   tempSearchQuery = '';
                   tempSearchController.clear();
+                  tempKeywordFilter = '';
+                  tempKeywordController.clear();
                   tempFilterLikedPosts = false;
                   tempFilterSimilarDate = false;
                   tempSelectedTags.clear();
@@ -644,6 +677,7 @@ class _FeedScreenState extends State<FeedScreen> {
               onPressed: () {
                 if (!isControllerDisposed) {
                   tempSearchController.dispose();
+                  tempKeywordController.dispose();
                   isControllerDisposed = true;
                 }
                 Navigator.pop(context);
@@ -652,10 +686,10 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
             FilledButton(
               onPressed: () {
-                // Apply 버튼을 눌렀을 때만 실제 상태에 반영
                 setState(() {
                   _searchQuery = tempSearchQuery;
                   _searchController.text = tempSearchQuery;
+                  _keywordFilter = tempKeywordFilter;
                   _filterLikedPosts = tempFilterLikedPosts;
                   _filterSimilarDate = tempFilterSimilarDate;
                   _selectedTags = Set.from(tempSelectedTags);
@@ -670,6 +704,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 _saveFiltersToPreferences();
                 if (!isControllerDisposed) {
                   tempSearchController.dispose();
+                  tempKeywordController.dispose();
                   isControllerDisposed = true;
                 }
                 Navigator.pop(context);
@@ -680,9 +715,9 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
       ),
     ).then((_) {
-      // 다이얼로그가 닫힐 때 tempSearchController가 dispose되지 않았다면 dispose
       if (!isControllerDisposed) {
         tempSearchController.dispose();
+        tempKeywordController.dispose();
       }
     });
   }
@@ -715,6 +750,7 @@ class _FeedScreenState extends State<FeedScreen> {
         _filterSimilarDate ||
         _selectedTags.isNotEmpty ||
         _filterWithLocation ||
+        _keywordFilter.isNotEmpty ||
         _filterWithMedia ||
         _dateRangeStart != null ||
         _dateRangeEnd != null ||
@@ -742,7 +778,8 @@ class _FeedScreenState extends State<FeedScreen> {
                     await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const NotificationManagementScreen(),
+                        builder: (context) =>
+                            const NotificationManagementScreen(),
                       ),
                     );
                     // Reload badge count after returning from notification screen
@@ -764,7 +801,9 @@ class _FeedScreenState extends State<FeedScreen> {
                         minHeight: 16,
                       ),
                       child: Text(
-                        _unreadNotificationCount > 99 ? '99+' : '$_unreadNotificationCount',
+                        _unreadNotificationCount > 99
+                            ? '99+'
+                            : '$_unreadNotificationCount',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 10,
@@ -775,6 +814,15 @@ class _FeedScreenState extends State<FeedScreen> {
                     ),
                   ),
               ],
+            ),
+            IconButton(
+              icon: const Icon(Icons.task_alt),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TasksScreen()),
+                );
+              },
             ),
             IconButton(
               icon: const Icon(Icons.chat_bubble_outline),
@@ -822,28 +870,131 @@ class _FeedScreenState extends State<FeedScreen> {
                     ),
                   )
                 : _viewMode == ViewMode.list
-                    ? RefreshIndicator(
-                        onRefresh: _loadPosts,
-                        child: ListView.builder(
-                          itemCount: _posts.length,
-                          itemBuilder: (context, index) {
-                            return PostCard(
-                              post: _posts[index],
-                              onTap: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => PostDetailScreen(
-                                      post: _posts[index],
-                                    ),
-                                  ),
-                                );
-                                // Always reload to reflect view count and other changes
-                                _loadPosts();
+                    ? Column(
+                        children: [
+                          // Persistent search bar
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                            child: TextField(
+                              controller: _searchController,
+                              decoration: InputDecoration(
+                                hintText: 'Search by title...',
+                                prefixIcon: const Icon(Icons.search),
+                                isDense: true,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                suffixIcon: _searchQuery.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.clear, size: 18),
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchQuery = '';
+                                            _searchController.clear();
+                                            _applyFiltersAndSort();
+                                          });
+                                          _saveFiltersToPreferences();
+                                        },
+                                      )
+                                    : null,
+                              ),
+                              onChanged: (v) {
+                                setState(() {
+                                  _searchQuery = v;
+                                  _applyFiltersAndSort();
+                                });
                               },
-                            );
-                          },
-                        ),
+                              onSubmitted: (_) => _saveFiltersToPreferences(),
+                            ),
+                          ),
+                          // Quick filter chips
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                            child: Row(
+                              children: [
+                                _QuickChip(
+                                  label: 'Favorites',
+                                  icon: Icons.favorite,
+                                  selected: _filterLikedPosts,
+                                  onTap: () {
+                                    setState(() {
+                                      _filterLikedPosts = !_filterLikedPosts;
+                                      _applyFiltersAndSort();
+                                    });
+                                    _saveFiltersToPreferences();
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                _QuickChip(
+                                  label: 'Has Photo',
+                                  icon: Icons.photo,
+                                  selected: _filterWithMedia,
+                                  onTap: () {
+                                    setState(() {
+                                      _filterWithMedia = !_filterWithMedia;
+                                      _applyFiltersAndSort();
+                                    });
+                                    _saveFiltersToPreferences();
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                _QuickChip(
+                                  label: 'Has Location',
+                                  icon: Icons.location_on,
+                                  selected: _filterWithLocation,
+                                  onTap: () {
+                                    setState(() {
+                                      _filterWithLocation =
+                                          !_filterWithLocation;
+                                      _applyFiltersAndSort();
+                                    });
+                                    _saveFiltersToPreferences();
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                _QuickChip(
+                                  label: 'Similar Date',
+                                  icon: Icons.event_repeat,
+                                  selected: _filterSimilarDate,
+                                  onTap: () {
+                                    setState(() {
+                                      _filterSimilarDate = !_filterSimilarDate;
+                                      _applyFiltersAndSort();
+                                    });
+                                    _saveFiltersToPreferences();
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Posts list
+                          Expanded(
+                            child: RefreshIndicator(
+                              onRefresh: _loadPosts,
+                              child: ListView.builder(
+                                itemCount: _posts.length,
+                                itemBuilder: (context, index) {
+                                  return PostCard(
+                                    post: _posts[index],
+                                    onTap: () async {
+                                      await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              PostDetailScreen(
+                                            post: _posts[index],
+                                          ),
+                                        ),
+                                      );
+                                      _loadPosts();
+                                    },
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
                       )
                     : MapView(
                         key: _mapViewKey,
@@ -869,33 +1020,26 @@ class _FeedScreenState extends State<FeedScreen> {
                 children: [
                   FloatingActionButton(
                     heroTag: 'myLocation',
-                    onPressed: () {
-                      // Get the current MapView state and move to my location
-                      // This will be handled by calling the map controller
-                      _moveToMyLocation();
-                    },
+                    onPressed: _moveToMyLocation,
                     child: const Icon(Icons.my_location),
                   ),
                   const SizedBox(width: 16),
                   FloatingActionButton(
-                    heroTag: 'viewModeToggle',
+                    heroTag: 'viewModeToggle_map',
                     onPressed: () async {
                       setState(() {
                         _viewMode = _viewMode == ViewMode.list
                             ? ViewMode.map
                             : ViewMode.list;
                       });
-                      // 보기 모드 변경 시 즉시 저장
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setInt('viewMode', _viewMode.index);
                     },
-                    child: Icon(
-                      _viewMode == ViewMode.list ? Icons.map : Icons.list,
-                    ),
+                    child: const Icon(Icons.list),
                   ),
                   const SizedBox(width: 16),
                   FloatingActionButton(
-                    heroTag: 'addPost',
+                    heroTag: 'addPost_map',
                     onPressed: () async {
                       await Navigator.push(
                         context,
@@ -912,24 +1056,21 @@ class _FeedScreenState extends State<FeedScreen> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   FloatingActionButton(
-                    heroTag: 'viewModeToggle',
+                    heroTag: 'viewModeToggle_list',
                     onPressed: () async {
                       setState(() {
                         _viewMode = _viewMode == ViewMode.list
                             ? ViewMode.map
                             : ViewMode.list;
                       });
-                      // 보기 모드 변경 시 즉시 저장
                       final prefs = await SharedPreferences.getInstance();
                       await prefs.setInt('viewMode', _viewMode.index);
                     },
-                    child: Icon(
-                      _viewMode == ViewMode.list ? Icons.map : Icons.list,
-                    ),
+                    child: const Icon(Icons.map),
                   ),
                   const SizedBox(width: 16),
                   FloatingActionButton(
-                    heroTag: 'addPost',
+                    heroTag: 'addPost_list',
                     onPressed: () async {
                       await Navigator.push(
                         context,
@@ -1194,6 +1335,22 @@ class _PostCardState extends State<PostCard> {
                       ],
                     ),
                   ],
+                  if (widget.post.keywords.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 2,
+                      children: widget.post.keywords.take(5).map((kw) {
+                        return Text(
+                          '#$kw',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   Text(
                     _formatDate(widget.post.createdAt),
@@ -1265,21 +1422,27 @@ class _MapViewState extends State<MapView> {
     for (var post in widget.posts) {
       if (post.latitude != null && post.longitude != null) {
         BitmapDescriptor? customIcon;
+        final tagColor =
+            post.tag != null ? TagHelper.getTagColor(post.tag!) : Colors.pink;
 
         // Generate custom marker from first media if available
         if (post.mediaPaths.isNotEmpty) {
           customIcon = await MarkerGenerator.generateMarker(
             mediaPath: post.mediaPaths.first,
             size: 100,
+            borderColor: tagColor,
           );
         }
+
+        final icon = customIcon ??
+            await MarkerGenerator.generateColoredDefaultMarker(tagColor);
 
         markers.add(
           Marker(
             markerId: MarkerId('post_${post.id}'),
             position: LatLng(post.latitude!, post.longitude!),
             onTap: () => widget.onPostTap(post),
-            icon: customIcon ?? BitmapDescriptor.defaultMarker,
+            icon: icon,
             infoWindow: InfoWindow(
               title: post.caption ?? 'Post',
               snippet: post.locationName,
@@ -1376,9 +1539,8 @@ class _MapViewState extends State<MapView> {
       ),
       markers: _markers,
       myLocationButtonEnabled: false,
-      myLocationEnabled: true,
+      myLocationEnabled: false,
       zoomControlsEnabled: true,
-      mapToolbarEnabled: true,
       onMapCreated: (controller) {
         _mapController = controller;
 
@@ -1398,5 +1560,37 @@ class _MapViewState extends State<MapView> {
   void dispose() {
     _mapController?.dispose();
     super.dispose();
+  }
+}
+
+// ─── Quick filter chip ─────────────────────────────────────────────────────
+
+class _QuickChip extends StatelessWidget {
+  const _QuickChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilterChip(
+      avatar: Icon(icon,
+          size: 16,
+          color: selected
+              ? Theme.of(context).colorScheme.onPrimaryContainer
+              : null),
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      selectedColor: Theme.of(context).colorScheme.primaryContainer,
+      showCheckmark: false,
+    );
   }
 }

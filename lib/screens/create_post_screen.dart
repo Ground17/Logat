@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'dart:math';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:native_exif/native_exif.dart';
@@ -8,17 +8,13 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:location/location.dart';
 import 'package:intl/intl.dart';
+import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
-import '../models/comment.dart';
-import '../models/like.dart';
 import '../models/post.dart';
 import '../database/database_helper.dart';
-import '../services/ai_service.dart';
-import '../services/ai_task_queue_service.dart';
 import '../widgets/video_player_widget.dart';
 import '../widgets/video_thumbnail_widget.dart';
-import '../services/settings_service.dart';
 import '../widgets/address_search_field.dart';
 import '../utils/tag_helper.dart';
 import 'location_picker_screen.dart';
@@ -46,29 +42,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   List<String> _mediaPaths = []; // 임시 경로 (저장 전)
   bool _isPosting = false;
-  bool _enableAiReactions = true;
   double? _latitude;
   double? _longitude;
   DateTime? _postDate;
   String? _selectedTag;
+  List<String> _keywords = [];
+  bool _loadingKeywords = false;
+  final _keywordController = TextEditingController();
   static const int maxMediaCount = 20;
+  static const int maxKeywords = 10;
 
   @override
   void initState() {
     super.initState();
-    _loadDefaultSettings();
 
     // Handle initial media paths from shared intent
     if (widget.initialMediaPaths != null && widget.initialMediaPaths!.isNotEmpty) {
       _copySharedFilesToDocuments(widget.initialMediaPaths!);
     }
-  }
-
-  Future<void> _loadDefaultSettings() async {
-    final settings = await SettingsService.loadSettings();
-    setState(() {
-      _enableAiReactions = settings.enableAiReactions;
-    });
   }
 
   Future<void> _copySharedFilesToDocuments(List<String> sharedPaths) async {
@@ -124,6 +115,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _titleController.dispose();
     _captionController.dispose();
     _locationController.dispose();
+    _keywordController.dispose();
     super.dispose();
   }
 
@@ -332,44 +324,47 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _pickMultipleMedia() async {
-    try {
-      if (_mediaPaths.length >= maxMediaCount) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Maximum $maxMediaCount media files allowed')),
-          );
-        }
-        return;
-      }
-
-      final List<XFile> medias = await _picker.pickMultipleMedia(
-        limit: maxMediaCount - _mediaPaths.length,
-      );
-
-      if (medias.isNotEmpty) {
-        final oldLength = _mediaPaths.length;
-
-        // Store temporary paths (will be copied to permanent storage only when posting)
-        setState(() {
-          _mediaPaths.addAll(medias.map((m) => m.path));
-        });
-
-        print(
-            '📸 Multiple - Added ${medias.length} files to _mediaPaths (temp): ${_mediaPaths.length} total files');
-
-        // Extract location and date from first media file if this is the first selection (both images and videos)
-        if (oldLength == 0 && medias.isNotEmpty) {
-          final firstPath = medias.first.path;
-          await _extractLocationFromImage(firstPath);
-        }
-      }
-    } catch (e) {
+    if (_mediaPaths.length >= maxMediaCount) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to select media: $e')),
+          SnackBar(content: Text('Maximum $maxMediaCount media files allowed')),
         );
       }
+      return;
+    }
+
+    final permission = await PhotoManager.requestPermissionExtend();
+    if (!permission.isAuth && !permission.hasAccess) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo library access denied')),
+        );
+      }
+      return;
+    }
+
+    final selected = await Navigator.push<List<AssetEntity>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _PhotoPickerScreen(
+          maxCount: maxMediaCount - _mediaPaths.length,
+        ),
+      ),
+    );
+
+    if (selected == null || selected.isEmpty) return;
+
+    final oldLength = _mediaPaths.length;
+
+    for (final asset in selected) {
+      final file = await asset.file;
+      if (file != null) {
+        setState(() => _mediaPaths.add(file.path));
+      }
+    }
+
+    if (oldLength == 0 && _mediaPaths.isNotEmpty) {
+      await _extractLocationFromImage(_mediaPaths.first);
     }
   }
 
@@ -488,192 +483,103 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
-  /// Generate AI image from prompt
-  Future<void> _generateAiImage() async {
-    if (_mediaPaths.length >= maxMediaCount) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Maximum $maxMediaCount media files allowed')),
-        );
-      }
+  void _addKeyword(String kw) {
+    final trimmed = kw.trim();
+    if (trimmed.isEmpty || _keywords.contains(trimmed)) return;
+    if (_keywords.length >= maxKeywords) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Max $maxKeywords keywords')),
+      );
+      return;
+    }
+    setState(() {
+      _keywords.add(trimmed);
+      _keywordController.clear();
+    });
+  }
+
+  Future<void> _suggestKeywordsWithAi() async {
+    final title = _titleController.text.trim();
+    final caption = _captionController.text.trim();
+    final location = _locationController.text.trim();
+    if (title.isEmpty && caption.isEmpty && location.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a title or caption first')),
+      );
       return;
     }
 
-    final controller = TextEditingController();
-    final description = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Generate AI Image'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Describe the image you want to generate:'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'e.g., A beautiful sunset over mountains',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Generate'),
-          ),
-        ],
-      ),
-    );
-
-    if (description != null && description.isNotEmpty) {
-      // Show loading dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-
-      try {
-        final imageName = await AiService.generateAvatarImage(
-          description: description,
-        );
-
-        if (mounted) {
-          Navigator.pop(context); // Close loading dialog
-
-          final appDir = await getApplicationDocumentsDirectory();
-
-          if (imageName != null) {
-            setState(() {
-              _mediaPaths.add('${appDir.path}/$imageName');
-            });
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('AI image generated successfully!'),
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to generate image. Please try again.'),
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          Navigator.pop(context); // Close loading dialog
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error generating image: $e'),
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  /// Show dialog for custom edit prompt
-  void _showEditPrompt(int imageIndex) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Image with AI'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Describe the edits you want to make:'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'e.g., Make the background darker, add more contrast',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _editImageWithAI(imageIndex, controller.text);
-            },
-            child: const Text('Apply Edit'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Edit image using AI
-  Future<void> _editImageWithAI(int imageIndex, String editPrompt) async {
-    final imagePath = _mediaPaths[imageIndex];
-
-    // Show loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
-
+    setState(() => _loadingKeywords = true);
     try {
-      final editedFileName = await AiService.editAvatarImage(
-        imagePath: imagePath,
-        editPrompt: editPrompt,
+      final prompt = '''
+Post info:
+- Title: ${title.isEmpty ? '(none)' : title}
+- Caption: ${caption.isEmpty ? '(none)' : caption}
+- Location: ${location.isEmpty ? '(none)' : location}
+
+Suggest 5 concise keyword tags (single words or short phrases) for this post.
+Return ONLY a JSON array of strings, e.g. ["travel","sunset","friends"]
+''';
+      final url = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$GEMINI_KEYS',
+      );
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'contents': [
+            {
+              'role': 'user',
+              'parts': [
+                {'text': prompt}
+              ],
+            }
+          ],
+          'generationConfig': {
+            'temperature': 0.5,
+            'responseMimeType': 'application/json',
+          },
+        }),
       );
 
-      if (mounted) {
-        Navigator.pop(context); // Close loading dialog
-
-        final appDir = await getApplicationDocumentsDirectory();
-
-        if (editedFileName != null) {
-          setState(() {
-            _mediaPaths[imageIndex] = '${appDir.path}/$editedFileName';
-          });
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Image edited successfully!'),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to edit image. Please try again.'),
-            ),
-          );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final text =
+            data['candidates'][0]['content']['parts'][0]['text'] as String;
+        final cleaned = text
+            .replaceAll(RegExp(r'```json\s*'), '')
+            .replaceAll(RegExp(r'```\s*'), '')
+            .trim();
+        final suggestions = jsonDecode(cleaned) as List<dynamic>;
+        if (mounted) {
+          _showKeywordSuggestions(
+              suggestions.map((s) => s.toString()).toList());
         }
       }
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error editing image: $e'),
-          ),
+          SnackBar(content: Text('AI suggestion failed: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _loadingKeywords = false);
     }
+  }
+
+  void _showKeywordSuggestions(List<String> suggestions) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => _KeywordSuggestionsSheet(
+        suggestions: suggestions,
+        existing: _keywords,
+        onAdd: (kw) {
+          if (!_keywords.contains(kw) && _keywords.length < maxKeywords) {
+            setState(() => _keywords.add(kw));
+          }
+        },
+      ),
+    );
   }
 
   Future<void> _createPost() async {
@@ -737,21 +643,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         longitude: _longitude,
         postDate: _postDate,
         tag: _selectedTag,
-        enableAiReactions: _enableAiReactions,
+        keywords: _keywords,
       );
 
-      final postId = await _db.createPost(post);
-      final createdPost = await _db.getPost(postId);
-
-      // Update settings with current AI reactions preference
-      final settings = await SettingsService.loadSettings();
-      await SettingsService.saveSettings(settings.copyWith(
-        enableAiReactions: _enableAiReactions,
-      ));
-
-      if (createdPost != null && _enableAiReactions) {
-        await _enqueueAiReactionTask(createdPost);
-      }
+      await _db.createPost(post);
 
       if (mounted) {
         Navigator.pop(context);
@@ -770,12 +665,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         setState(() => _isPosting = false);
       }
     }
-  }
-
-  Future<void> _enqueueAiReactionTask(Post post) async {
-    await AiTaskQueueService.instance.enqueueReactionTask(post.id!);
-    // Process tasks in background (don't await)
-    AiTaskQueueService.instance.processPendingTasks();
   }
 
   @override
@@ -870,22 +759,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                       ),
                               ),
                             ),
-                            // Edit button for images only (top-right, before close button)
-                            if (!isVideo)
-                              Positioned(
-                                top: 4,
-                                right: 36,
-                                child: IconButton(
-                                  onPressed: () => _showEditPrompt(index),
-                                  icon: const Icon(Icons.auto_awesome,
-                                      color: Colors.white),
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: Colors.black54,
-                                    padding: const EdgeInsets.all(4),
-                                    minimumSize: const Size(28, 28),
-                                  ),
-                                ),
-                              ),
                             // Close button (top-right corner)
                             Positioned(
                               top: 4,
@@ -946,14 +819,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           onPressed: () => _pickMedia(ImageSource.camera),
                           icon: const Icon(Icons.camera_alt),
                           label: const Text('Camera'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _generateAiImage,
-                          icon: const Icon(Icons.auto_awesome),
-                          label: const Text('AI Image'),
                         ),
                       ),
                     ],
@@ -1112,47 +977,80 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
 
-                  // AI Reactions Toggle
-                  Card(
-                    child: SwitchListTile(
-                      value: _enableAiReactions,
-                      onChanged: (value) {
-                        setState(() => _enableAiReactions = value);
-                      },
-                      title: const Text('Enable AI Reactions'),
-                      subtitle: const Text(
-                        'Allow AI friends to like and comment on this post',
-                      ),
-                      secondary: const Icon(Icons.smart_toy),
-                    ),
-                  ),
-
-                  if (_enableAiReactions) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
+                  // Keyword Tags
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Icon(Icons.info_outline,
-                              color: Colors.blue, size: 20),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'AI friends will react based on your settings',
-                              style:
-                                  TextStyle(color: Colors.blue, fontSize: 13),
-                            ),
+                          Text(
+                            'Keywords (${_keywords.length}/$maxKeywords)',
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w500),
                           ),
+                          const Spacer(),
+                          _loadingKeywords
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                )
+                              : TextButton.icon(
+                                  onPressed: _suggestKeywordsWithAi,
+                                  icon: const Icon(Icons.auto_awesome,
+                                      size: 16),
+                                  label: const Text('AI Suggest'),
+                                ),
                         ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      // Current keywords as chips
+                      if (_keywords.isNotEmpty)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: _keywords
+                              .map((kw) => Chip(
+                                    label: Text('#$kw'),
+                                    deleteIcon: const Icon(Icons.close,
+                                        size: 14),
+                                    onDeleted: () =>
+                                        setState(() => _keywords.remove(kw)),
+                                  ))
+                              .toList(),
+                        ),
+                      if (_keywords.isNotEmpty)
+                        const SizedBox(height: 8),
+                      // Input row
+                      if (_keywords.length < maxKeywords)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _keywordController,
+                                decoration: const InputDecoration(
+                                  hintText: 'Add keyword...',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                ),
+                                onSubmitted: _addKeyword,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton.filled(
+                              onPressed: () =>
+                                  _addKeyword(_keywordController.text),
+                              icon: const Icon(Icons.add),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -1198,6 +1096,216 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ),
                       ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Custom photo/video picker ─────────────────────────────────────────────
+
+class _PhotoPickerScreen extends StatefulWidget {
+  const _PhotoPickerScreen({required this.maxCount});
+  final int maxCount;
+
+  @override
+  State<_PhotoPickerScreen> createState() => _PhotoPickerScreenState();
+}
+
+class _PhotoPickerScreenState extends State<_PhotoPickerScreen> {
+  List<AssetPathEntity> _albums = [];
+  AssetPathEntity? _currentAlbum;
+  List<AssetEntity> _assets = [];
+  final Set<String> _selected = {};
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAlbums();
+  }
+
+  Future<void> _loadAlbums() async {
+    final albums = await PhotoManager.getAssetPathList(
+      type: RequestType.common,
+      filterOption: FilterOptionGroup(
+        imageOption: const FilterOption(needTitle: false),
+        videoOption: const FilterOption(needTitle: false),
+      ),
+    );
+    if (albums.isEmpty) return;
+    setState(() {
+      _albums = albums;
+      _currentAlbum = albums.first;
+      _loading = false;
+    });
+    await _loadAssets(albums.first);
+  }
+
+  Future<void> _loadAssets(AssetPathEntity album) async {
+    final count = await album.assetCountAsync;
+    final assets = await album.getAssetListRange(start: 0, end: count);
+    if (mounted) setState(() => _assets = assets);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: _albums.isEmpty
+            ? const Text('Gallery')
+            : DropdownButton<AssetPathEntity>(
+                value: _currentAlbum,
+                underline: const SizedBox.shrink(),
+                items: _albums
+                    .map((a) => DropdownMenuItem(value: a, child: Text(a.name)))
+                    .toList(),
+                onChanged: (a) {
+                  if (a == null) return;
+                  setState(() {
+                    _currentAlbum = a;
+                    _assets = [];
+                  });
+                  _loadAssets(a);
+                },
+              ),
+        actions: [
+          if (_selected.isNotEmpty)
+            TextButton(
+              onPressed: _confirm,
+              child: Text('Add (${_selected.length})'),
+            ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 2,
+                crossAxisSpacing: 2,
+              ),
+              itemCount: _assets.length,
+              itemBuilder: (ctx, i) {
+                final asset = _assets[i];
+                final isSelected = _selected.contains(asset.id);
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      if (isSelected) {
+                        _selected.remove(asset.id);
+                      } else if (_selected.length < widget.maxCount) {
+                        _selected.add(asset.id);
+                      }
+                    });
+                  },
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      FutureBuilder<Uint8List?>(
+                        future: asset.thumbnailDataWithSize(
+                            const ThumbnailSize(300, 300)),
+                        builder: (ctx, snap) {
+                          if (snap.data == null) {
+                            return Container(color: Colors.grey[200]);
+                          }
+                          return Image.memory(snap.data!, fit: BoxFit.cover);
+                        },
+                      ),
+                      if (asset.type == AssetType.video)
+                        const Align(
+                          alignment: Alignment.bottomLeft,
+                          child: Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(Icons.videocam,
+                                color: Colors.white, size: 18),
+                          ),
+                        ),
+                      if (isSelected)
+                        Container(
+                          color: Colors.blue.withValues(alpha: 0.4),
+                          child: const Center(
+                            child: Icon(Icons.check_circle,
+                                color: Colors.white, size: 32),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  Future<void> _confirm() async {
+    final entities = _assets
+        .where((a) => _selected.contains(a.id))
+        .toList();
+    Navigator.pop(context, entities);
+  }
+}
+
+// ─── Keyword suggestions bottom sheet ─────────────────────────────────────
+
+class _KeywordSuggestionsSheet extends StatefulWidget {
+  const _KeywordSuggestionsSheet({
+    required this.suggestions,
+    required this.existing,
+    required this.onAdd,
+  });
+
+  final List<String> suggestions;
+  final List<String> existing;
+  final void Function(String) onAdd;
+
+  @override
+  State<_KeywordSuggestionsSheet> createState() =>
+      _KeywordSuggestionsSheetState();
+}
+
+class _KeywordSuggestionsSheetState extends State<_KeywordSuggestionsSheet> {
+  late final Set<String> _added = Set.from(widget.existing);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'AI Suggested Keywords',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: widget.suggestions.map((kw) {
+              final isAdded = _added.contains(kw);
+              return FilterChip(
+                label: Text('#$kw'),
+                selected: isAdded,
+                onSelected: (selected) {
+                  if (selected && !isAdded) {
+                    widget.onAdd(kw);
+                    setState(() => _added.add(kw));
+                  }
+                },
+                selectedColor:
+                    Theme.of(context).colorScheme.primaryContainer,
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
             ),
           ),
         ],

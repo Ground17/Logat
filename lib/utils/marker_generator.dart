@@ -15,9 +15,10 @@ class MarkerGenerator {
   static Future<BitmapDescriptor?> generateMarker({
     required String mediaPath,
     int size = 100,
+    Color borderColor = Colors.pink,
   }) async {
     // Check cache first
-    final cacheKey = '$mediaPath-$size';
+    final cacheKey = '$mediaPath-$size-${borderColor.value}';
     if (_cache.containsKey(cacheKey)) {
       return _cache[cacheKey];
     }
@@ -54,7 +55,7 @@ class MarkerGenerator {
       }
 
       // Resize and convert to marker
-      final resizedBytes = await _resizeImage(imageBytes, size);
+      final resizedBytes = await _resizeImage(imageBytes, size, borderColor);
       final marker = BitmapDescriptor.bytes(resizedBytes);
 
       // Cache the result
@@ -68,7 +69,7 @@ class MarkerGenerator {
   }
 
   /// Resize image to specified size while maintaining square aspect ratio
-  static Future<Uint8List> _resizeImage(Uint8List data, int size) async {
+  static Future<Uint8List> _resizeImage(Uint8List data, int size, Color borderColor) async {
     final codec = await ui.instantiateImageCodec(
       data,
       targetWidth: size,
@@ -91,7 +92,7 @@ class MarkerGenerator {
 
     // Draw border
     final borderPaint = Paint()
-      ..color = Colors.blue.withValues(alpha: 0.5)
+      ..color = borderColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4;
     canvas.drawRect(
@@ -134,6 +135,36 @@ class MarkerGenerator {
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
 
     return byteData!.buffer.asUint8List();
+  }
+
+  static Future<BitmapDescriptor> generateColoredDefaultMarker(
+    Color color, {
+    int size = 60,
+  }) async {
+    final cacheKey = 'default-${color.value}-$size';
+    if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final center = Offset(size / 2, size / 2);
+    final radius = size / 2 - 4;
+
+    canvas.drawCircle(center, radius, Paint()..color = color);
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(size, size);
+    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+    final descriptor = BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+    _cache[cacheKey] = descriptor;
+    return descriptor;
   }
 
   /// Clear the marker cache

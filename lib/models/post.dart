@@ -10,6 +10,7 @@ class Post {
   final double? longitude;
   final DateTime? postDate; // The date when the post content happened (vs createdAt which is when posted)
   final String? tag; // Color tag: null, 'red', 'orange', 'yellow', 'green', 'blue', 'purple'
+  final List<String> keywords; // Keyword tags (up to 10)
   final int viewCount;
   final int likeCount;
   final bool enableAiReactions; // Whether AI can react to this post
@@ -26,6 +27,7 @@ class Post {
     this.longitude,
     this.postDate,
     this.tag,
+    this.keywords = const [],
     this.viewCount = 0,
     this.likeCount = 0,
     this.enableAiReactions = true,
@@ -48,6 +50,7 @@ class Post {
       'longitude': longitude,
       'postDate': postDate?.toIso8601String(),
       'tag': tag,
+      'keywords': keywords.isEmpty ? '' : keywords.join('|||'),
       'viewCount': viewCount,
       'likeCount': likeCount,
       'enableAiReactions': enableAiReactions ? 1 : 0,
@@ -64,6 +67,9 @@ class Post {
     // Reconstruct full paths from filenames
     final fullPaths = await PathHelper.filenamesToPaths(filenames);
 
+    final keywordsStr = map['keywords'] as String? ?? '';
+    final keywords = keywordsStr.isEmpty ? <String>[] : keywordsStr.split('|||');
+
     return Post(
       id: map['id'] as int?,
       title: map['title'] as String?,
@@ -74,6 +80,7 @@ class Post {
       longitude: map['longitude'] as double?,
       postDate: map['postDate'] != null ? DateTime.parse(map['postDate'] as String) : null,
       tag: map['tag'] as String?,
+      keywords: keywords,
       viewCount: map['viewCount'] as int? ?? 0,
       likeCount: map['likeCount'] as int? ?? 0,
       enableAiReactions: map['enableAiReactions'] == 1,
@@ -92,6 +99,7 @@ class Post {
     double? longitude,
     DateTime? postDate,
     String? tag,
+    List<String>? keywords,
     int? viewCount,
     int? likeCount,
     bool? enableAiReactions,
@@ -108,6 +116,7 @@ class Post {
       longitude: longitude ?? this.longitude,
       postDate: postDate ?? this.postDate,
       tag: tag ?? this.tag,
+      keywords: keywords ?? this.keywords,
       viewCount: viewCount ?? this.viewCount,
       likeCount: likeCount ?? this.likeCount,
       enableAiReactions: enableAiReactions ?? this.enableAiReactions,
