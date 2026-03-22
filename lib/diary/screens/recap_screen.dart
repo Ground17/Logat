@@ -10,6 +10,7 @@ import '../providers/diary_providers.dart';
 import 'add_to_folder_screen.dart';
 import 'event_detail_screen.dart';
 import 'event_map_screen.dart';
+import 'memory_reel_view.dart';
 
 class RecapScreen extends ConsumerWidget {
   const RecapScreen({super.key});
@@ -21,6 +22,10 @@ class RecapScreen extends ConsumerWidget {
 
     if (viewMode == DiaryViewMode.map) {
       return const EventMapScreen(key: ValueKey('recap_map'));
+    }
+
+    if (viewMode == DiaryViewMode.reel) {
+      return const MemoryReelView();
     }
 
     return eventsAsync.when(

@@ -8,10 +8,9 @@ import '../database/app_database.dart';
 import '../models/date_range_filter.dart';
 import '../models/diary_filter.dart';
 import '../models/location_filter.dart';
-import '../models/notification_settings.dart';
 import '../providers/diary_providers.dart';
-import '../services/memories_notification_service.dart';
 import 'activity_screen.dart';
+import 'diary_notification_settings_screen.dart';
 import 'diary_settings_screen.dart';
 import 'folder_browser_screen.dart';
 import 'manual_record_screen.dart';
@@ -129,17 +128,11 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
               onPressed: () => _showFilterSheet(context),
             ),
             IconButton(
-              icon: Icon(
-                viewMode == DiaryViewMode.map
-                    ? Icons.list_outlined
-                    : Icons.map_outlined,
-              ),
-              tooltip: viewMode == DiaryViewMode.map ? 'List view' : 'Map view',
+              icon: Icon(_nextModeIcon(viewMode)),
+              tooltip: _nextModeLabel(viewMode),
               onPressed: () => ref
                   .read(diaryViewModeProvider.notifier)
-                  .setMode(viewMode == DiaryViewMode.map
-                      ? DiaryViewMode.list
-                      : DiaryViewMode.map),
+                  .setMode(_nextMode(viewMode)),
             ),
           ],
           IconButton(
@@ -169,7 +162,9 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
               tooltip: 'New folder',
               child: const Icon(Icons.create_new_folder_outlined),
             )
-          : _index == 0 && viewMode == DiaryViewMode.map
+          : _index == 0 && viewMode == DiaryViewMode.reel
+              ? null
+              : _index == 0 && viewMode == DiaryViewMode.map
               ? Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -243,6 +238,24 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
     );
   }
 }
+
+DiaryViewMode _nextMode(DiaryViewMode m) => switch (m) {
+      DiaryViewMode.list => DiaryViewMode.reel,
+      DiaryViewMode.reel => DiaryViewMode.map,
+      DiaryViewMode.map => DiaryViewMode.list,
+    };
+
+IconData _nextModeIcon(DiaryViewMode m) => switch (m) {
+      DiaryViewMode.list => Icons.play_circle_outline,
+      DiaryViewMode.reel => Icons.map_outlined,
+      DiaryViewMode.map => Icons.list_outlined,
+    };
+
+String _nextModeLabel(DiaryViewMode m) => switch (m) {
+      DiaryViewMode.list => 'Reel view',
+      DiaryViewMode.reel => 'Map view',
+      DiaryViewMode.map => 'List view',
+    };
 
 // ─── Filter bottom sheet ──────────────────────────────────────────────────
 
@@ -460,40 +473,15 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
 
 // ─── Notification settings sheet ──────────────────────────────────────────
 
-class _NotificationSheet extends ConsumerStatefulWidget {
+class _NotificationSheet extends StatelessWidget {
   const _NotificationSheet();
 
   @override
-  ConsumerState<_NotificationSheet> createState() => _NotificationSheetState();
-}
-
-class _NotificationSheetState extends ConsumerState<_NotificationSheet> {
-  MemoriesNotificationSettings _memoriesSettings =
-      const MemoriesNotificationSettings();
-  bool _loaded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    MemoriesNotificationSettings.load().then((s) {
-      if (mounted) setState(() { _memoriesSettings = s; _loaded = true; });
-    });
-  }
-
-  Future<void> _saveMemories(MemoriesNotificationSettings s) async {
-    setState(() => _memoriesSettings = s);
-    await s.save();
-    await MemoriesNotificationService().schedule(s);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final recSettings = ref.watch(recommendationSettingsProvider);
-
     return DraggableScrollableSheet(
-      initialChildSize: 0.55,
-      minChildSize: 0.4,
-      maxChildSize: 0.85,
+      initialChildSize: 0.35,
+      minChildSize: 0.25,
+      maxChildSize: 0.5,
       expand: false,
       builder: (ctx, scrollCtrl) => SafeArea(
         child: ListView(
@@ -515,135 +503,25 @@ class _NotificationSheetState extends ConsumerState<_NotificationSheet> {
               'Notifications',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 16),
-
-            // ── On This Day ──────────────────────────────────────────
-            const Text('On This Day',
-                style: TextStyle(fontWeight: FontWeight.w500)),
-            if (!_loaded) const LinearProgressIndicator()
-            else ...[
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Enable'),
-                subtitle: const Text('Reminders from past memories'),
-                value: _memoriesSettings.enabled,
-                onChanged: (v) => _saveMemories(_memoriesSettings.copyWith(enabled: v)),
-              ),
-              if (_memoriesSettings.enabled)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.access_time),
-                  title: const Text('Time'),
-                  trailing: Text(
-                    '${_memoriesSettings.hour.toString().padLeft(2,'0')}:'
-                    '${_memoriesSettings.minute.toString().padLeft(2,'0')}',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  onTap: () async {
-                    final picked = await showTimePicker(
-                      context: context,
-                      initialTime: TimeOfDay(
-                        hour: _memoriesSettings.hour,
-                        minute: _memoriesSettings.minute,
-                      ),
-                    );
-                    if (picked != null) {
-                      _saveMemories(_memoriesSettings.copyWith(
-                        hour: picked.hour,
-                        minute: picked.minute,
-                      ));
-                    }
-                  },
-                ),
-            ],
-
-            const Divider(height: 24),
-
-            // ── AI Recommendations ───────────────────────────────────
-            const Text('AI Recommendations',
-                style: TextStyle(fontWeight: FontWeight.w500)),
-            SwitchListTile(
+            const SizedBox(height: 8),
+            ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Enable notifications'),
-              subtitle: const Text('Daily diary topic suggestions'),
-              value: recSettings.enabled && recSettings.notificationEnabled,
-              onChanged: recSettings.enabled
-                  ? (v) async {
-                      final updated = recSettings.copyWith(notificationEnabled: v);
-                      ref.read(recommendationSettingsProvider.notifier).update(updated);
-                      final svc = ref.read(memoriesNotificationServiceProvider);
-                      if (v) {
-                        await svc.scheduleDaily(
-                          hour: recSettings.notificationHour,
-                          minute: recSettings.notificationMinute,
-                        );
-                      } else {
-                        await svc.cancelDaily();
-                      }
-                    }
-                  : null,
+              leading: const Icon(Icons.notifications_outlined),
+              title: const Text('Notification Settings'),
+              subtitle: const Text(
+                  'On This Day, periodic reminders, AI content'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        const DiaryNotificationSettingsScreen(),
+                  ),
+                );
+              },
             ),
-            if (!recSettings.enabled)
-              Padding(
-                padding: const EdgeInsets.only(left: 16, bottom: 8),
-                child: Text(
-                  'Enable AI Recommendations in Settings to configure this',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.grey),
-                ),
-              ),
-            if (recSettings.enabled && recSettings.notificationEnabled)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.access_time),
-                title: const Text('Time'),
-                trailing: Text(
-                  '${recSettings.notificationHour.toString().padLeft(2,'0')}:'
-                  '${recSettings.notificationMinute.toString().padLeft(2,'0')}',
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                onTap: () async {
-                  final picked = await showTimePicker(
-                    context: context,
-                    initialTime: TimeOfDay(
-                      hour: recSettings.notificationHour,
-                      minute: recSettings.notificationMinute,
-                    ),
-                  );
-                  if (picked == null) return;
-                  final updated = recSettings.copyWith(
-                    notificationHour: picked.hour,
-                    notificationMinute: picked.minute,
-                  );
-                  ref.read(recommendationSettingsProvider.notifier).update(updated);
-                  if (updated.notificationEnabled) {
-                    await ref.read(memoriesNotificationServiceProvider).scheduleDaily(
-                      hour: picked.hour,
-                      minute: picked.minute,
-                    );
-                  }
-                },
-              ),
-          const Divider(height: 24),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.tune_outlined),
-            title: const Text('More notification settings'),
-            subtitle: const Text(
-                'Schedule, frequency, notification text…'),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const DiarySettingsScreen(),
-                ),
-              );
-            },
-          ),
           ],
         ),
       ),

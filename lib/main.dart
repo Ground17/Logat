@@ -1,30 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-import 'diary/models/notification_settings.dart';
-import 'diary/services/memories_notification_service.dart';
+import 'diary/models/diary_notification_settings.dart';
+import 'diary/services/diary_notification_manager.dart';
+import 'diary/services/notification_background_refresh.dart';
 import 'diary/screens/diary_home_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-Future<void> _scheduleDefaultNotificationsOnFirstRun() async {
-  final prefs = await SharedPreferences.getInstance();
-  const firstRunKey = 'notifications_default_scheduled_v1';
-  if (prefs.getBool(firstRunKey) == true) return;
-
-  // Schedule On This Day notification with default settings (enabled=true)
-  final memoriesSettings = await MemoriesNotificationSettings.load();
-  if (memoriesSettings.enabled) {
-    await MemoriesNotificationService().schedule(memoriesSettings);
-  }
-
-  await prefs.setBool(firstRunKey, true);
+Future<void> _rescheduleAllNotificationsOnStartup() async {
+  final settings = await DiaryNotificationSettings.load();
+  // No AI on startup — skip network call for fast launch
+  await DiaryNotificationManager.instance.rescheduleAll(settings);
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await _scheduleDefaultNotificationsOnFirstRun();
+  await DiaryNotificationManager.instance.initialize();
+  await NotificationBackgroundRefresh.register();
+  await _rescheduleAllNotificationsOnStartup();
   runApp(const ProviderScope(child: DiaryApp()));
 }
 

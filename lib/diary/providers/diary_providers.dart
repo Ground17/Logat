@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,7 +20,6 @@ import '../services/ai_recommendation_service.dart';
 import '../services/event_generation_service.dart';
 import '../services/event_grouping_service.dart';
 import '../services/geocoding_service.dart';
-import '../services/memories_notification_service.dart';
 import '../services/photo_indexing_service.dart';
 import '../services/recommendation_settings_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -68,10 +66,6 @@ final photoIndexingServiceProvider = Provider((ref) {
 
 final folderRepositoryProvider = Provider((ref) {
   return FolderRepository(ref.watch(appDatabaseProvider));
-});
-
-final memoriesNotificationServiceProvider = Provider((ref) {
-  return MemoriesNotificationService();
 });
 
 final aiRecommendationServiceProvider = Provider((ref) {
@@ -389,7 +383,7 @@ final filteredJournalEventsProvider = FutureProvider<List<EventSummary>>((ref) a
 
 // ─── View mode ────────────────────────────────────────────────────────────
 
-enum DiaryViewMode { list, map }
+enum DiaryViewMode { list, map, reel }
 
 class ViewModeNotifier extends StateNotifier<DiaryViewMode> {
   ViewModeNotifier() : super(DiaryViewMode.list) {
@@ -398,9 +392,9 @@ class ViewModeNotifier extends StateNotifier<DiaryViewMode> {
 
   Future<void> _loadFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getString('diary_view_mode') == 'map') {
-      state = DiaryViewMode.map;
-    }
+    final saved = prefs.getString('diary_view_mode');
+    if (saved == 'map') state = DiaryViewMode.map;
+    if (saved == 'reel') state = DiaryViewMode.reel;
   }
 
   Future<void> setMode(DiaryViewMode mode) async {
@@ -415,41 +409,18 @@ final diaryViewModeProvider =
   (ref) => ViewModeNotifier(),
 );
 
-// ─── Notification time ────────────────────────────────────────────────────
-
-class NotificationTimeNotifier extends StateNotifier<TimeOfDay> {
-  NotificationTimeNotifier(this._service)
-      : super(const TimeOfDay(hour: 9, minute: 0)) {
-    _loadFromPrefs();
-  }
-
-  final MemoriesNotificationService _service;
-
-  Future<void> _loadFromPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final hour = prefs.getInt('diary_memories_notification_hour') ?? 9;
-    final minute = prefs.getInt('diary_memories_notification_minute') ?? 0;
-    state = TimeOfDay(hour: hour, minute: minute);
-  }
-
-  Future<void> setTime(TimeOfDay time) async {
-    state = time;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('diary_memories_notification_hour', time.hour);
-    await prefs.setInt('diary_memories_notification_minute', time.minute);
-    final enabled =
-        prefs.getBool('diary_memories_notification_enabled') ?? false;
-    if (enabled) {
-      await _service.scheduleDaily(hour: time.hour, minute: time.minute);
+final reelItemsProvider =
+    FutureProvider<List<({String assetId, EventSummary event})>>((ref) async {
+  final events = await ref.watch(filteredJournalEventsProvider.future);
+  final all = <({String assetId, EventSummary event})>[];
+  for (final e in events) {
+    for (final id in e.assetIds) {
+      if (id != 'manual_no_photo') all.add((assetId: id, event: e));
     }
   }
-}
-
-final notificationTimeProvider =
-    StateNotifierProvider<NotificationTimeNotifier, TimeOfDay>((ref) {
-  return NotificationTimeNotifier(
-    ref.watch(memoriesNotificationServiceProvider),
-  );
+  all.sort((a, b) => b.event.qualityScore.compareTo(a.event.qualityScore));
+  final pool = all.take(200).toList()..shuffle();
+  return pool.take(500).toList();
 });
 
 // ─── Indexing controller ──────────────────────────────────────────────────
