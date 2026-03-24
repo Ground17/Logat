@@ -128,3 +128,6 @@ Drift (SQLite) 기반, 두 개의 DB 파일로 분리:
 ## 라이선스
 
 Private project — All rights reserved
+
+## 기본 색깔
+#B48EAD, #5E81AC, #88C0D0, #A3BE8C, #EBCB8B, #BF616A  

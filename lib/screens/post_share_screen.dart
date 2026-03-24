@@ -23,17 +23,15 @@ class _PostShareScreenState extends State<PostShareScreen> {
   final GlobalKey _previewKey = GlobalKey();
 
   static const _presetColors = [
-    Color(0xFF1A1A2E),
-    Color(0xFF16213E),
-    Color(0xFF0F3460),
-    Color(0xFF2D6A4F),
-    Color(0xFF533483),
-    Color(0xFF774936),
-    Color(0xFF212121),
-    Color(0xFF880E4F),
+    Color(0xFFBF616A),
+    Color(0xFF88C0D0),
+    Color(0xFFEBCB8B),
+    Color(0xFFA3BE8C),
+    Color(0xFF5E81AC),
+    Color(0xFFB48EAD),
   ];
 
-  Color _selectedColor = const Color(0xFF1A1A2E);
+  Color _selectedColor = const Color(0xFF5E81AC);
   bool _usePhoto = true;
   bool _showDate = true;
   bool _showCaption = true;

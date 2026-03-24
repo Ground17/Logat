@@ -150,26 +150,6 @@ class _FolderBrowserScreenState extends ConsumerState<FolderBrowserScreen> {
             ),
       body: CustomScrollView(
         slivers: [
-          if (widget.parentFolderId != null)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                  label: const Text('Add events to this folder'),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => _EventPickerScreen(
-                        folderId: widget.parentFolderId!,
-                      ),
-                    ),
-                  ).then((_) => ref.invalidate(
-                      folderContentsProvider(widget.parentFolderId!))),
-                ),
-              ),
-            ),
           foldersAsync.when(
             data: (folders) => SliverList(
               delegate: SliverChildBuilderDelegate(
@@ -257,8 +237,8 @@ class _FolderListTile extends ConsumerWidget {
         children: [
           IconButton(
             icon: Icon(
-              folder.isFavorite ? Icons.star : Icons.star_border,
-              color: folder.isFavorite ? Colors.amber : null,
+              folder.isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: folder.isFavorite ? Colors.red : null,
             ),
             onPressed: onToggleFavorite,
           ),
@@ -295,7 +275,7 @@ class _FolderListTile extends ConsumerWidget {
             ),
             ListTile(
               leading: Icon(
-                folder.isFavorite ? Icons.star_border : Icons.star,
+                folder.isFavorite ? Icons.favorite_border : Icons.favorite,
               ),
               title: Text(folder.isFavorite ? 'Remove from favorites' : 'Add to favorites'),
               onTap: () {
@@ -358,87 +338,3 @@ class _RecordListTile extends StatelessWidget {
   }
 }
 
-// ─── Event picker for adding to folder ────────────────────────────────────
-
-class _EventPickerScreen extends ConsumerStatefulWidget {
-  const _EventPickerScreen({required this.folderId});
-
-  final String folderId;
-
-  @override
-  ConsumerState<_EventPickerScreen> createState() => _EventPickerScreenState();
-}
-
-class _EventPickerScreenState extends ConsumerState<_EventPickerScreen> {
-  final Set<String> _selected = {};
-
-  @override
-  Widget build(BuildContext context) {
-    final eventsAsync = ref.watch(mapEventsProvider);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_selected.isEmpty
-            ? 'Select Events'
-            : '${_selected.length} selected'),
-        actions: [
-          if (_selected.isNotEmpty)
-            TextButton(
-              onPressed: _addSelected,
-              child: const Text('Add'),
-            ),
-        ],
-      ),
-      body: eventsAsync.when(
-        data: (events) => events.isEmpty
-            ? const Center(child: Text('No events to add'))
-            : ListView.builder(
-                itemCount: events.length,
-                itemBuilder: (ctx, i) {
-                  final event = events[i];
-                  final isSelected = _selected.contains(event.eventId);
-                  return CheckboxListTile(
-                    value: isSelected,
-                    onChanged: (v) {
-                      setState(() {
-                        if (v == true) {
-                          _selected.add(event.eventId);
-                        } else {
-                          _selected.remove(event.eventId);
-                        }
-                      });
-                    },
-                    title: Text(
-                      event.title ?? '${event.assetCount} photos',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      DateFormat('yyyy.M.d')
-                          .format(event.startAt.toLocal()),
-                    ),
-                    secondary: const Icon(Icons.photo_outlined),
-                  );
-                },
-              ),
-        loading: () =>
-            const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-      ),
-    );
-  }
-
-  Future<void> _addSelected() async {
-    final repo = ref.read(folderRepositoryProvider);
-    for (final eventId in _selected) {
-      await repo.addRecord(widget.folderId, eventId);
-    }
-    ref.invalidate(folderContentsProvider(widget.folderId));
-    if (mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Added ${_selected.length} events to folder.')),
-      );
-    }
-  }
-}

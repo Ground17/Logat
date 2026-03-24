@@ -1,21 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:location/location.dart';
 
-import '../database/app_database.dart';
 import '../models/date_range_filter.dart';
 import '../models/diary_filter.dart';
+import '../models/folder.dart';
 import '../models/location_filter.dart';
 import '../providers/diary_providers.dart';
 import 'activity_screen.dart';
-import 'diary_notification_settings_screen.dart';
 import 'diary_settings_screen.dart';
+import 'notification_history_screen.dart';
+import 'event_map_screen.dart';
 import 'folder_browser_screen.dart';
 import 'manual_record_screen.dart';
+import 'memory_reel_view.dart';
+import 'photo_grid_screen.dart';
 import 'radius_picker_screen.dart';
 import 'recap_screen.dart';
+import 'tab_order_settings_screen.dart';
 
 class DiaryHomeScreen extends ConsumerStatefulWidget {
   const DiaryHomeScreen({super.key});
@@ -26,46 +33,39 @@ class DiaryHomeScreen extends ConsumerStatefulWidget {
 
 class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
   int _index = 0;
-  bool _initialTabChecked = false;
+  late StreamSubscription _intentSub;
 
-  Future<void> _createTopLevelFolder() async {
-    final ctrl = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New Folder'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty) return;
-    try {
-      final folderId = 'folder_${DateTime.now().millisecondsSinceEpoch}';
-      await ref.read(appDatabaseProvider).insertFolder(
-            folderId: folderId,
-            name: name,
-          );
-      ref.invalidate(folderListProvider(null));
-    } on FolderDepthException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+  @override
+  void initState() {
+    super.initState();
+    _intentSub =
+        ReceiveSharingIntent.instance.getMediaStream().listen((files) {
+      if (files.isNotEmpty && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ManualRecordScreen()),
+        );
       }
-    }
+    });
+    ReceiveSharingIntent.instance.getInitialMedia().then((files) {
+      ReceiveSharingIntent.instance.reset();
+      if (files.isNotEmpty && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ManualRecordScreen()),
+            );
+          }
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _intentSub.cancel();
+    super.dispose();
   }
 
   Future<void> _goToMyLocation() async {
@@ -81,64 +81,105 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
     } catch (_) {}
   }
 
-  static const _tabTitles = ['Journal', 'Activity', 'Folders'];
+  Widget? _buildFab(BuildContext context, int logicalTab) {
+    switch (logicalTab) {
+      case 0: // Loop — folder shortcut
+        return FloatingActionButton.small(
+          heroTag: 'openFolders',
+          tooltip: '폴더 관리',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const FolderBrowserScreen()),
+          ),
+          child: const Icon(Icons.folder_outlined),
+        );
+      case 1: // List
+      case 2: // Grid
+        return FloatingActionButton(
+          heroTag: 'addDiaryEntry',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ManualRecordScreen()),
+          ),
+          child: const Icon(Icons.add),
+        );
+      case 4: // Map
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingActionButton.small(
+              heroTag: 'mapMyLocation',
+              onPressed: _goToMyLocation,
+              child: const Icon(Icons.my_location),
+            ),
+            const SizedBox(height: 8),
+            FloatingActionButton(
+              heroTag: 'addDiaryEntry',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ManualRecordScreen()),
+              ),
+              child: const Icon(Icons.add),
+            ),
+          ],
+        );
+      default:
+        return null;
+    }
+  }
 
-  static const _screens = [
-    RecapScreen(),
-    ActivityScreen(),
-    FolderBrowserScreen(isEmbedded: true),
-  ];
+  static const Map<int, IconData> _tabSelectedIcons = {
+    0: Icons.loop,
+    1: Icons.auto_stories,
+    2: Icons.grid_view,
+    3: Icons.bar_chart,
+    4: Icons.map,
+  };
+
+  static final Map<int, Widget> _tabScreens = {
+    0: const MemoryLoopView(),
+    1: const JournalListScreen(),
+    2: const PhotoGridScreen(),
+    3: const ActivityScreen(),
+    4: const EventMapScreen(key: ValueKey('home_map')),
+  };
 
   @override
   Widget build(BuildContext context) {
-    final viewMode = ref.watch(diaryViewModeProvider);
+    final tabOrder = ref.watch(tabOrderProvider);
+    final logicalTab = tabOrder[_index.clamp(0, tabOrder.length - 1)];
 
-    // Navigate to a specific tab when requested by a child widget (e.g. activity screen)
+    // Navigate to a specific tab when requested by a child widget
+    // pendingTabProvider stores logical tab ID
     ref.listen(pendingTabProvider, (_, next) {
       if (next != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            setState(() => _index = next);
+            final pos = tabOrder.indexOf(next);
+            setState(() => _index = pos >= 0 ? pos : 0);
             ref.read(pendingTabProvider.notifier).state = null;
           }
         });
       }
     });
 
-    // Switch to Activity tab on first data load if no photos have been indexed
-    if (!_initialTabChecked) {
-      ref.watch(indexedAssetCountProvider).whenData((count) {
-        _initialTabChecked = true;
-        if (count == 0 && _index == 0) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _index = 1);
-          });
-        }
-      });
-    }
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(_tabTitles[_index]),
+        title: Text(kTabLabels[logicalTab] ?? ''),
         actions: [
-          if (_index == 0) ...[
-            IconButton(
-              icon: const Icon(Icons.filter_list_outlined),
-              tooltip: 'Filter',
-              onPressed: () => _showFilterSheet(context),
-            ),
-            IconButton(
-              icon: Icon(_nextModeIcon(viewMode)),
-              tooltip: _nextModeLabel(viewMode),
-              onPressed: () => ref
-                  .read(diaryViewModeProvider.notifier)
-                  .setMode(_nextMode(viewMode)),
-            ),
-          ],
+          IconButton(
+            icon: const Icon(Icons.filter_list_outlined),
+            tooltip: 'Filter',
+            onPressed: () => _showFilterSheet(context),
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
-            tooltip: 'Notification settings',
-            onPressed: () => _showNotificationSheet(context),
+            tooltip: '알림 내역',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const NotificationHistoryScreen()),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -153,71 +194,22 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
       ),
       body: IndexedStack(
         index: _index,
-        children: _screens,
+        children: tabOrder
+            .map((id) => _tabScreens[id] ?? const SizedBox.shrink())
+            .toList(),
       ),
-      floatingActionButton: _index == 2
-          ? FloatingActionButton(
-              heroTag: 'createFolder',
-              onPressed: _createTopLevelFolder,
-              tooltip: 'New folder',
-              child: const Icon(Icons.create_new_folder_outlined),
-            )
-          : _index == 0 && viewMode == DiaryViewMode.reel
-              ? null
-              : _index == 0 && viewMode == DiaryViewMode.map
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FloatingActionButton.small(
-                      heroTag: 'mapMyLocation',
-                      onPressed: _goToMyLocation,
-                      child: const Icon(Icons.my_location),
-                    ),
-                    const SizedBox(height: 8),
-                    FloatingActionButton(
-                      heroTag: 'addDiaryEntry',
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const ManualRecordScreen()),
-                      ),
-                      child: const Icon(Icons.add),
-                    ),
-                  ],
-                )
-              : FloatingActionButton(
-                  heroTag: 'addDiaryEntry',
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const ManualRecordScreen()),
-                  ),
-                  child: const Icon(Icons.add),
-                ),
+      floatingActionButton: _buildFab(context, logicalTab),
       bottomNavigationBar: NavigationBar(
+        height: 60,
         selectedIndex: _index,
-        onDestinationSelected: (value) {
-          setState(() {
-            _index = value;
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.auto_stories_outlined),
-            selectedIcon: Icon(Icons.auto_stories),
-            label: 'Journal',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Activity',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
-            label: 'Folders',
-          ),
-        ],
+        onDestinationSelected: (value) => setState(() => _index = value),
+        destinations: tabOrder.map((id) {
+          return NavigationDestination(
+            icon: Icon(kTabIcons[id]),
+            selectedIcon: Icon(_tabSelectedIcons[id] ?? kTabIcons[id]!),
+            label: kTabLabels[id] ?? '',
+          );
+        }).toList(),
       ),
     );
   }
@@ -230,32 +222,7 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
     );
   }
 
-  Future<void> _showNotificationSheet(BuildContext context) async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => const _NotificationSheet(),
-    );
-  }
 }
-
-DiaryViewMode _nextMode(DiaryViewMode m) => switch (m) {
-      DiaryViewMode.list => DiaryViewMode.reel,
-      DiaryViewMode.reel => DiaryViewMode.map,
-      DiaryViewMode.map => DiaryViewMode.list,
-    };
-
-IconData _nextModeIcon(DiaryViewMode m) => switch (m) {
-      DiaryViewMode.list => Icons.play_circle_outline,
-      DiaryViewMode.reel => Icons.map_outlined,
-      DiaryViewMode.map => Icons.list_outlined,
-    };
-
-String _nextModeLabel(DiaryViewMode m) => switch (m) {
-      DiaryViewMode.list => 'Reel view',
-      DiaryViewMode.reel => 'Map view',
-      DiaryViewMode.map => 'List view',
-    };
 
 // ─── Filter bottom sheet ──────────────────────────────────────────────────
 
@@ -333,6 +300,8 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
                       ref.read(dateRangeFilterProvider.notifier).update(
                           _defaultDateRange());
                       ref.read(locationFilterProvider.notifier).state = null;
+                      ref.read(selectedFolderFilterProvider.notifier).state =
+                          null;
                       ref.invalidate(mapEventsProvider);
                       ref.invalidate(filteredJournalEventsProvider);
                     },
@@ -429,6 +398,14 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
                   }
                 },
               ),
+              // Folder filter
+              _FolderFilterTile(
+                onFolderSelected: (folder) {
+                  ref.read(selectedFolderFilterProvider.notifier).state =
+                      folder;
+                  ref.invalidate(filteredJournalEventsProvider);
+                },
+              ),
             ],
           ),
         ),
@@ -471,56 +448,58 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
   }
 }
 
-// ─── Notification settings sheet ──────────────────────────────────────────
 
-class _NotificationSheet extends StatelessWidget {
-  const _NotificationSheet();
+// ─── Folder filter tile ────────────────────────────────────────────────────
+
+class _FolderFilterTile extends ConsumerWidget {
+  const _FolderFilterTile({required this.onFolderSelected});
+
+  final void Function(DiaryFolder?) onFolderSelected;
 
   @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.35,
-      minChildSize: 0.25,
-      maxChildSize: 0.5,
-      expand: false,
-      builder: (ctx, scrollCtrl) => SafeArea(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedFolder = ref.watch(selectedFolderFilterProvider);
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.folder_outlined),
+      title: Text(selectedFolder?.name ?? '모든 폴더'),
+      subtitle: const Text('폴더 필터'),
+      trailing: selectedFolder != null
+          ? IconButton(
+              icon: const Icon(Icons.clear),
+              onPressed: () => onFolderSelected(null),
+            )
+          : const Icon(Icons.chevron_right),
+      onTap: () => _pickFolder(context, ref),
+    );
+  }
+
+  void _pickFolder(BuildContext context, WidgetRef ref) {
+    final folders = ref.read(allFoldersProvider).valueOrNull ?? [];
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
         child: ListView(
-          controller: scrollCtrl,
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          shrinkWrap: true,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const Text(
-              'Notifications',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
             ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.notifications_outlined),
-              title: const Text('Notification Settings'),
-              subtitle: const Text(
-                  'On This Day, periodic reminders, AI content'),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+              leading: const Icon(Icons.folder_off_outlined),
+              title: const Text('모든 폴더'),
               onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        const DiaryNotificationSettingsScreen(),
-                  ),
-                );
+                onFolderSelected(null);
+                Navigator.pop(ctx);
               },
+            ),
+            ...folders.map(
+              (f) => ListTile(
+                leading: const Icon(Icons.folder_outlined),
+                title: Text(f.name),
+                onTap: () {
+                  onFolderSelected(f);
+                  Navigator.pop(ctx);
+                },
+              ),
             ),
           ],
         ),

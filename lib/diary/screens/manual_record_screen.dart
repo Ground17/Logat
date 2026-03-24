@@ -1,11 +1,14 @@
 import 'dart:typed_data';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:photo_manager/photo_manager.dart' hide LatLng;
 
+import '../database/app_database.dart';
 import '../providers/diary_providers.dart';
+import 'diary_settings_screen.dart';
 import 'location_picker_screen.dart';
 
 class ManualRecordScreen extends ConsumerStatefulWidget {
@@ -72,17 +75,20 @@ class _ManualRecordScreenState extends ConsumerState<ManualRecordScreen> {
     final permission = await PhotoManager.requestPermissionExtend();
     if (!permission.isAuth) return;
 
-    final albums = await PhotoManager.getAssetPathList(type: RequestType.image);
+    final albums = await PhotoManager.getAssetPathList(
+      type: RequestType.common,
+      onlyAll: true,
+    );
     if (albums.isEmpty) return;
-    final recent = albums.first;
-    final assets = await recent.getAssetListPaged(page: 0, size: 50);
 
     if (!mounted) return;
 
+    final db = ref.read(appDatabaseProvider);
     final selected = await showDialog<List<String>>(
       context: context,
       builder: (ctx) => _AssetPickerDialog(
-        assets: assets,
+        path: albums.first,
+        db: db,
         initialSelected: _selectedAssetIds,
       ),
     );
@@ -162,6 +168,38 @@ class _ManualRecordScreenState extends ConsumerState<ManualRecordScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 0, 0, 4),
+            child: RichText(
+              text: TextSpan(
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.6),
+                ),
+                children: [
+                  TextSpan(
+                    text: '설정',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                    ),
+                    recognizer: TapGestureRecognizer()
+                      ..onTap = () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const DiarySettingsScreen(),
+                            ),
+                          ),
+                  ),
+                  const TextSpan(
+                      text: ' 내 사진 indexing으로 편하게 기기 내 사진/동영상을 관리할 수 있습니다'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _titleController,
             decoration: const InputDecoration(
@@ -236,11 +274,13 @@ class _ManualRecordScreenState extends ConsumerState<ManualRecordScreen> {
 
 class _AssetPickerDialog extends StatefulWidget {
   const _AssetPickerDialog({
-    required this.assets,
+    required this.path,
+    required this.db,
     required this.initialSelected,
   });
 
-  final List<AssetEntity> assets;
+  final AssetPathEntity path;
+  final AppDatabase db;
   final List<String> initialSelected;
 
   @override
@@ -248,12 +288,49 @@ class _AssetPickerDialog extends StatefulWidget {
 }
 
 class _AssetPickerDialogState extends State<_AssetPickerDialog> {
+  static const _pageSize = 80;
+
   late Set<String> _selected;
+  final List<AssetEntity> _assets = [];
+  Set<String> _indexedIds = {};
+  bool _loading = false;
+  bool _hasMore = true;
+  int _page = 0;
+  late final ScrollController _scroll;
 
   @override
   void initState() {
     super.initState();
     _selected = Set.from(widget.initialSelected);
+    _scroll = ScrollController()..addListener(_onScroll);
+    _loadMore();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || !_hasMore) return;
+    setState(() => _loading = true);
+    final batch = await widget.path.getAssetListPaged(page: _page, size: _pageSize);
+    if (!mounted) return;
+    final newIds = await widget.db.filterIndexedAssetIds(batch.map((a) => a.id).toList());
+    setState(() {
+      _assets.addAll(batch);
+      _indexedIds = {..._indexedIds, ...newIds};
+      _hasMore = batch.length == _pageSize;
+      _page++;
+      _loading = false;
+    });
   }
 
   @override
@@ -264,15 +341,25 @@ class _AssetPickerDialogState extends State<_AssetPickerDialog> {
         width: double.maxFinite,
         height: 400,
         child: GridView.builder(
+          controller: _scroll,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
             crossAxisSpacing: 4,
             mainAxisSpacing: 4,
           ),
-          itemCount: widget.assets.length,
+          itemCount: _assets.length + (_hasMore ? 1 : 0),
           itemBuilder: (ctx, i) {
-            final asset = widget.assets[i];
+            if (i >= _assets.length) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(8),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              );
+            }
+            final asset = _assets[i];
             final isSelected = _selected.contains(asset.id);
+            final isIndexed = _indexedIds.contains(asset.id);
             return GestureDetector(
               onTap: () => setState(() {
                 if (isSelected) {
@@ -293,6 +380,19 @@ class _AssetPickerDialogState extends State<_AssetPickerDialog> {
                       return Image.memory(snap.data!, fit: BoxFit.cover);
                     },
                   ),
+                  if (asset.type == AssetType.video)
+                    const Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Icon(Icons.videocam, color: Colors.white, size: 16),
+                    ),
+                  if (isIndexed)
+                    const Positioned(
+                      bottom: 3,
+                      left: 3,
+                      child: Icon(Icons.archive_outlined,
+                          color: Colors.white70, size: 14),
+                    ),
                   if (isSelected)
                     Container(
                       color: Colors.blue.withValues(alpha: 0.4),
@@ -317,3 +417,4 @@ class _AssetPickerDialogState extends State<_AssetPickerDialog> {
     );
   }
 }
+

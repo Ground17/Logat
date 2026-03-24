@@ -40,5 +40,6 @@ class RecommendationSettingsService {
     'rec_notif_enabled',
     'rec_notif_hour',
     'rec_notif_minute',
+    'rec_bg_indexing',
   ];
 }

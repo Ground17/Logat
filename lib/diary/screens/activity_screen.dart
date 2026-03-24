@@ -15,71 +15,20 @@ import 'event_detail_screen.dart';
 import 'manual_record_screen.dart';
 import 'monthly_recap_screen.dart';
 import 'share_customize_screen.dart';
+import 'yearly_recap_screen.dart';
 
 class ActivityScreen extends ConsumerWidget {
   const ActivityScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final permissionState = ref.watch(permissionStateProvider);
-    final indexing = ref.watch(indexingControllerProvider);
-    final indexedAssetCount = ref.watch(indexedAssetCountProvider);
     final recSettings = ref.watch(recommendationSettingsProvider);
     final onThisDay = ref.watch(onThisDayProvider);
     final yearlyStats = ref.watch(yearlyDailyStatsProvider);
 
-    final isOnboarding =
-        indexedAssetCount.valueOrNull == 0 && !indexing.isRunning;
-
-    Future<void> runIndex() async {
-      await ref
-          .read(indexingControllerProvider.notifier)
-          .requestPermissionAndIndex();
-      ref.invalidate(permissionStateProvider);
-      ref.invalidate(indexedAssetCountProvider);
-      ref.invalidate(dailyStatsProvider);
-      ref.invalidate(diaryCandidatesProvider);
-      ref.invalidate(locationClustersProvider);
-      ref.invalidate(mapEventsProvider);
-      ref.invalidate(tagSummariesProvider);
-      ref.invalidate(onThisDayProvider);
-      ref.invalidate(yearlyDailyStatsProvider);
-      ref.invalidate(filteredJournalEventsProvider);
-    }
-
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        if (isOnboarding) ...[
-          _OnboardingBanner(onTap: runIndex),
-          const SizedBox(height: 12),
-        ],
-        permissionState.when(
-          data: (permission) => _PermissionCard(
-            permission: permission,
-            onManageLimitedAccess: () async {
-              await PhotoManager.presentLimited();
-              ref.invalidate(permissionStateProvider);
-            },
-            onOpenSettings: () async {
-              await PhotoManager.openSetting();
-            },
-          ),
-          loading: () => const LinearProgressIndicator(),
-          error: (error, _) => Text('Permission check failed: $error'),
-        ),
-        const SizedBox(height: 12),
-        if (!isOnboarding)
-          _IndexingCard(
-            indexingMessage: indexing.message ?? 'Ready',
-            indexingLabel:
-                'Scanned ${indexing.scannedCount} · Inserted ${indexing.insertedCount} · Skipped ${indexing.skippedCount}',
-            indexedAssetCount: indexedAssetCount,
-            isRunning: indexing.isRunning,
-            fraction: indexing.fraction,
-            onRun: runIndex,
-          ),
-        const SizedBox(height: 12),
         // Annual heatmap
         Card(
           child: Padding(
@@ -101,6 +50,18 @@ class ActivityScreen extends ConsumerWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
+                            builder: (_) => YearlyRecapScreen(year: now.year),
+                          ),
+                        );
+                      },
+                      child: const Text('Yearly →'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        final now = DateTime.now();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
                             builder: (_) => MonthlyRecapScreen(
                               year: now.year,
                               month: now.month,
@@ -108,7 +69,7 @@ class ActivityScreen extends ConsumerWidget {
                           ),
                         );
                       },
-                      child: const Text('Monthly Report →'),
+                      child: const Text('Monthly →'),
                     ),
                   ],
                 ),
@@ -137,61 +98,6 @@ class ActivityScreen extends ConsumerWidget {
         _AiRecommendationsCard(settingsEnabled: recSettings.enabled),
         const SizedBox(height: 32),
       ],
-    );
-  }
-}
-
-// ─── Onboarding banner ─────────────────────────────────────────────────────
-
-class _OnboardingBanner extends StatelessWidget {
-  const _OnboardingBanner({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: Theme.of(context).colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.photo_library_outlined,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Get Started',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Allow photo access and index your library to automatically create diary events from your memories.',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-              ),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: onTap,
-              icon: const Icon(Icons.bolt_outlined),
-              label: const Text('Allow & Index Photos'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -409,7 +315,7 @@ class _TopLocationsCardState extends ConsumerState<_TopLocationsCard> {
                         ref.invalidate(diaryCandidatesProvider);
                         ref.invalidate(mapEventsProvider);
                         ref.invalidate(tagSummariesProvider);
-                        ref.read(pendingTabProvider.notifier).state = 0;
+                        ref.read(pendingTabProvider.notifier).state = 1;
                       },
                     );
                   }).toList(),
@@ -708,149 +614,3 @@ class _RecommendationTile extends StatelessWidget {
   }
 }
 
-// ─── Indexing card ─────────────────────────────────────────────────────────
-
-class _IndexingCard extends StatelessWidget {
-  const _IndexingCard({
-    required this.indexingMessage,
-    required this.indexingLabel,
-    required this.indexedAssetCount,
-    required this.isRunning,
-    required this.onRun,
-    this.fraction,
-  });
-
-  final String indexingMessage;
-  final String indexingLabel;
-  final AsyncValue<int> indexedAssetCount;
-  final bool isRunning;
-  final Future<void> Function() onRun;
-  final double? fraction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Metadata Index → Event Summary',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Text(indexingMessage),
-            const SizedBox(height: 4),
-            Text(indexingLabel),
-            if (isRunning) ...[
-              const SizedBox(height: 10),
-              LinearProgressIndicator(
-                value: fraction,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              if (fraction != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '${(fraction! * 100).toStringAsFixed(1)}%',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ],
-            const SizedBox(height: 12),
-            indexedAssetCount.when(
-              data: (count) => Text('Indexed assets: $count'),
-              loading: () => const Text('Loading indexed count...'),
-              error: (error, _) => Text('Count failed: $error'),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: isRunning ? null : onRun,
-              icon: const Icon(Icons.bolt_outlined),
-              label: Text(isRunning ? 'Indexing...' : 'Allow & Index Photos'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Permission card ────────────────────────────────────────────────────────
-
-class _PermissionCard extends StatelessWidget {
-  const _PermissionCard({
-    required this.permission,
-    required this.onManageLimitedAccess,
-    required this.onOpenSettings,
-  });
-
-  final PermissionState permission;
-  final Future<void> Function() onManageLimitedAccess;
-  final Future<void> Function() onOpenSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    final isAuthorized = permission.hasAccess;
-    final isLimited = permission.isLimited;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  isAuthorized
-                      ? Icons.check_circle_outline
-                      : Icons.warning_amber_rounded,
-                  color: isAuthorized ? Colors.green : Colors.orange,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isLimited
-                            ? 'Limited Photos access'
-                            : isAuthorized
-                                ? 'Photo access granted'
-                                : 'Photo access required',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        isLimited
-                            ? 'Currently only selected photos are accessible. Change to full access for automatic indexing.'
-                            : 'Only metadata is indexed, not the original files.',
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (isLimited) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton.tonal(
-                    onPressed: onManageLimitedAccess,
-                    child: const Text('Re-select Photos'),
-                  ),
-                  OutlinedButton(
-                    onPressed: onOpenSettings,
-                    child: const Text('Allow Full Access in Settings'),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}

@@ -6,7 +6,10 @@
       "Bash(grep -v \"^$\")",
       "WebSearch",
       "WebFetch(domain:ai.google.dev)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(find /Users/ground17/Documents/Apps/Flutter/logat/lib -type f -name *notification* -o -name *reminder*)",
+      "Bash(grep -E \"\\\\.dart$\")",
+      "Bash(grep:*)"
     ]
   }
 }

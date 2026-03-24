@@ -1,5 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'hundred_days_notif_settings.dart';
+
 enum NotificationScheduleType { daily, everyNDays, weekdays }
 
 enum NotificationAiFormat {
@@ -257,17 +259,21 @@ class DiaryNotificationSettings {
   const DiaryNotificationSettings({
     required this.onThisDay,
     required this.periodicRules,
+    required this.hundredDays,
   });
 
   final OnThisDayNotifSettings onThisDay;
   final List<PeriodicNotifRule> periodicRules;
+  final HundredDaysNotifSettings hundredDays;
 
   static Future<DiaryNotificationSettings> load() async {
     final onThisDay = await OnThisDayNotifSettings.load();
     final periodicRules = await PeriodicNotifRule.loadAll();
+    final hundredDays = await HundredDaysNotifSettings.load();
     return DiaryNotificationSettings(
       onThisDay: onThisDay,
       periodicRules: periodicRules,
+      hundredDays: hundredDays,
     );
   }
 }

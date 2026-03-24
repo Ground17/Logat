@@ -1,5 +1,8 @@
+import 'dart:math';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:photo_manager/photo_manager.dart';
+import 'package:location/location.dart' as loc_pkg;
+import 'package:photo_manager/photo_manager.dart' hide LatLng;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/app_database.dart';
@@ -11,6 +14,7 @@ import '../models/folder.dart';
 import '../models/indexing_progress.dart';
 import '../models/location_cluster.dart';
 import '../models/location_filter.dart';
+import '../models/loop_algorithm_settings.dart';
 import '../models/recommendation_settings.dart';
 import '../repositories/diary_repository.dart';
 import '../repositories/folder_repository.dart';
@@ -22,9 +26,57 @@ import '../services/event_grouping_service.dart';
 import '../services/geocoding_service.dart';
 import '../services/photo_indexing_service.dart';
 import '../services/recommendation_settings_service.dart';
+import '../services/view_count_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 final mapControllerProvider = StateProvider<GoogleMapController?>((ref) => null);
+
+// ─── User location ────────────────────────────────────────────────────────
+
+/// 현재 사용자 위치 (LatLng?). 권한 없거나 실패 시 null.
+final userLocationProvider = FutureProvider<LatLng?>((ref) async {
+  try {
+    final location = loc_pkg.Location();
+    final permission = await location.hasPermission();
+    if (permission == loc_pkg.PermissionStatus.denied ||
+        permission == loc_pkg.PermissionStatus.deniedForever) {
+      return null;
+    }
+    final data = await location.getLocation();
+    if (data.latitude != null && data.longitude != null) {
+      return LatLng(data.latitude!, data.longitude!);
+    }
+  } catch (_) {}
+  return null;
+});
+
+/// Haversine 거리 계산 (km)
+double distanceKm(
+    double lat1, double lon1, double lat2, double lon2) {
+  const r = 6371.0;
+  final dLat = (lat2 - lat1) * pi / 180;
+  final dLon = (lon2 - lon1) * pi / 180;
+  final a = sin(dLat / 2) * sin(dLat / 2) +
+      cos(lat1 * pi / 180) *
+          cos(lat2 * pi / 180) *
+          sin(dLon / 2) *
+          sin(dLon / 2);
+  return r * 2 * atan2(sqrt(a), sqrt(1 - a));
+}
+
+/// 거리 레이블 (< Xkm 스타일). 너무 멀면 빈 문자열.
+String formatDistanceLabel(double km) {
+  if (km < 0.1) return '< 100m';
+  if (km < 0.5) return '< 500m';
+  if (km < 1) return '< 1km';
+  if (km < 2) return '< 2km';
+  if (km < 5) return '< 5km';
+  if (km < 10) return '< 10km';
+  if (km < 20) return '< 20km';
+  if (km < 50) return '< 50km';
+  if (km < 100) return '< 100km';
+  return '';
+}
 
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
   final database = AppDatabase();
@@ -179,6 +231,65 @@ final locationFilterProvider = StateProvider<LocationFilter?>((ref) => null);
 /// When non-null, DiaryHomeScreen switches to this tab index and resets to null.
 final pendingTabProvider = StateProvider<int?>((ref) => null);
 
+final gridColumnCountProvider = StateProvider<int>((ref) => 3);
+
+// ─── Tab order ────────────────────────────────────────────────────────────
+
+class TabOrderNotifier extends StateNotifier<List<int>> {
+  TabOrderNotifier() : super(const [0, 1, 2, 3, 4]) {
+    _load();
+  }
+
+  static const _key = 'tab_order';
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final str = prefs.getString(_key);
+    if (str == null) return;
+    final parts = str.split(',');
+    if (parts.length != 5) return;
+    final parsed = parts.map(int.tryParse).toList();
+    if (parsed.any((v) => v == null)) return;
+    final order = parsed.cast<int>();
+    if (order.toSet().length != 5) return;
+    state = order;
+  }
+
+  Future<void> setOrder(List<int> order) async {
+    state = List.unmodifiable(order);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, order.join(','));
+  }
+}
+
+final tabOrderProvider =
+    StateNotifierProvider<TabOrderNotifier, List<int>>((ref) {
+  return TabOrderNotifier();
+});
+
+// ─── Loop algorithm settings ──────────────────────────────────────────────
+
+class LoopAlgorithmSettingsNotifier
+    extends StateNotifier<LoopAlgorithmSettings> {
+  LoopAlgorithmSettingsNotifier() : super(const LoopAlgorithmSettings()) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    state = await LoopAlgorithmSettings.load();
+  }
+
+  Future<void> update(LoopAlgorithmSettings settings) async {
+    await settings.save();
+    state = settings;
+  }
+}
+
+final loopAlgorithmSettingsProvider =
+    StateNotifierProvider<LoopAlgorithmSettingsNotifier, LoopAlgorithmSettings>(
+  (ref) => LoopAlgorithmSettingsNotifier(),
+);
+
 final indexingControllerProvider =
     StateNotifierProvider<IndexingController, IndexingProgress>((ref) {
   return IndexingController(
@@ -253,6 +364,24 @@ final yearlyDailyStatsProvider = FutureProvider<List<DailyStats>>((ref) {
   final start = DateTime.utc(now.year - 1, now.month, now.day);
   final end = DateTime.utc(now.year, now.month, now.day + 1);
   return ref.watch(diaryRepositoryProvider).dailyStats(start: start, end: end);
+});
+
+// family: year → DailyStats 리스트
+final yearlyStatsProvider =
+    FutureProvider.family<List<DailyStats>, int>((ref, year) {
+  final start = DateTime.utc(year, 1, 1);
+  final end = DateTime.utc(year + 1, 1, 1);
+  return ref.watch(diaryRepositoryProvider).dailyStats(start: start, end: end);
+});
+
+// family: year → LocationCluster 리스트
+final yearlyLocationClustersProvider =
+    FutureProvider.family<List<LocationCluster>, int>((ref, year) {
+  final start = DateTime.utc(year, 1, 1);
+  final end = DateTime.utc(year + 1, 1, 1);
+  return ref
+      .watch(diaryRepositoryProvider)
+      .locationClustersInRange(start: start, end: end);
 });
 
 // family: (year, month) → LocationCluster 리스트
@@ -374,16 +503,29 @@ List<EventSummary> _applyFilter(
   }).toList();
 }
 
+final selectedFolderFilterProvider = StateProvider<DiaryFolder?>((_) => null);
+
 final filteredJournalEventsProvider = FutureProvider<List<EventSummary>>((ref) async {
   final events = await ref.watch(mapEventsProvider.future);
   final filter = ref.watch(diaryFilterProvider);
   final selectedDate = ref.watch(selectedDateProvider);
-  return _applyFilter(events, filter, selectedDate);
+  var filtered = _applyFilter(events, filter, selectedDate);
+
+  final folderFilter = ref.watch(selectedFolderFilterProvider);
+  if (folderFilter != null) {
+    final folderContents = await ref.watch(
+      folderContentsProvider(folderFilter.folderId).future,
+    );
+    final folderEventIds = {for (final e in folderContents) e.eventId};
+    filtered = filtered.where((e) => folderEventIds.contains(e.eventId)).toList();
+  }
+
+  return filtered;
 });
 
 // ─── View mode ────────────────────────────────────────────────────────────
 
-enum DiaryViewMode { list, map, reel }
+enum DiaryViewMode { list, map, loop }
 
 class ViewModeNotifier extends StateNotifier<DiaryViewMode> {
   ViewModeNotifier() : super(DiaryViewMode.list) {
@@ -394,7 +536,7 @@ class ViewModeNotifier extends StateNotifier<DiaryViewMode> {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('diary_view_mode');
     if (saved == 'map') state = DiaryViewMode.map;
-    if (saved == 'reel') state = DiaryViewMode.reel;
+    if (saved == 'reel' || saved == 'loop') state = DiaryViewMode.loop;
   }
 
   Future<void> setMode(DiaryViewMode mode) async {
@@ -409,18 +551,69 @@ final diaryViewModeProvider =
   (ref) => ViewModeNotifier(),
 );
 
-final reelItemsProvider =
-    FutureProvider<List<({String assetId, EventSummary event})>>((ref) async {
+bool _isSpecialDay(DateTime eventDate) {
+  final today = DateTime.now().toLocal();
+  final local = eventDate.toLocal();
+  final days = DateTime(today.year, today.month, today.day)
+      .difference(DateTime(local.year, local.month, local.day))
+      .inDays;
+  if (days <= 0) return false;
+  if (days % 100 == 0) return true;
+  if (today.month == local.month && today.day == local.day) return true;
+  return false;
+}
+
+final loopItemsProvider =
+    FutureProvider<List<EventSummary>>((ref) async {
   final events = await ref.watch(filteredJournalEventsProvider.future);
-  final all = <({String assetId, EventSummary event})>[];
-  for (final e in events) {
-    for (final id in e.assetIds) {
-      if (id != 'manual_no_photo') all.add((assetId: id, event: e));
+  final algoSettings = ref.watch(loopAlgorithmSettingsProvider);
+  final viewCounts = await ViewCountService.loadAll();
+
+  final filtered = events
+      .where((e) => e.assetIds.any((id) => id != 'manual_no_photo'))
+      .toList();
+
+  if (filtered.isEmpty) return filtered;
+
+  // Compute average view count for relative comparison
+  final totalViews = viewCounts.values.fold<int>(0, (s, v) => s + v);
+  final avgViews = viewCounts.isEmpty ? 0.0 : totalViews / viewCounts.length;
+
+  final rng = Random();
+  final now = DateTime.now();
+
+  // Efraimidis-Spirakis weighted random permutation:
+  // score = u^(1/weight), sort descending → higher weight = earlier
+  final scored = filtered.map((e) {
+    double weight = algoSettings.baseWeight.clamp(1, 10).toDouble();
+
+    if (e.isFavorite) weight += algoSettings.favoriteWeight;
+    if (_isSpecialDay(e.startAt)) weight += algoSettings.onThisDayWeight;
+
+    final daysDiff = now.difference(e.startAt.toLocal()).inDays.abs();
+    if (daysDiff <= 30) weight += algoSettings.recentWeight;
+
+    final vc = viewCounts[e.eventId] ?? 0;
+    switch (algoSettings.viewCountMode) {
+      case LoopViewCountMode.boostUnwatched:
+        if (vc == 0) {
+          weight *= 1.5;
+        } else if (vc > avgViews) {
+          weight *= (1.0 / (1.0 + (vc - avgViews) * 0.05)).clamp(0.3, 1.0);
+        }
+      case LoopViewCountMode.boostWatched:
+        if (vc > 0) weight *= (1.0 + log(1.0 + vc) * 0.3);
+      case LoopViewCountMode.ignore:
+        break;
     }
-  }
-  all.sort((a, b) => b.event.qualityScore.compareTo(a.event.qualityScore));
-  final pool = all.take(200).toList()..shuffle();
-  return pool.take(500).toList();
+
+    final u = rng.nextDouble().clamp(1e-10, 1.0);
+    final score = pow(u, 1.0 / weight.clamp(0.1, 30.0));
+    return (event: e, score: score);
+  }).toList();
+
+  scored.sort((a, b) => b.score.compareTo(a.score));
+  return scored.map((s) => s.event).toList();
 });
 
 // ─── Indexing controller ──────────────────────────────────────────────────

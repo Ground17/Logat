@@ -13,6 +13,7 @@ import '../models/event_summary.dart';
 import '../models/folder.dart';
 import '../models/heuristic_tag.dart';
 import '../providers/diary_providers.dart';
+import '../services/view_count_service.dart';
 import '../services/geocoding_service.dart';
 import 'location_picker_screen.dart';
 import 'share_customize_screen.dart';
@@ -33,12 +34,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   List<DiaryFolder> _eventFolders = [];
 
   static const _colorOptions = [
-    Color(0xFFE53935), // Red
-    Color(0xFFFF7043), // Orange
-    Color(0xFFFFCA28), // Yellow
-    Color(0xFF43A047), // Green
-    Color(0xFF1E88E5), // Blue
-    Color(0xFF8E24AA), // Purple
+    Color(0xFFBF616A), // Red
+    Color(0xFF88C0D0), // Sky
+    Color(0xFFEBCB8B), // Yellow
+    Color(0xFFA3BE8C), // Green
+    Color(0xFF5E81AC), // Blue
+    Color(0xFFB48EAD), // Purple
   ];
 
   @override
@@ -47,6 +48,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     _event = widget.event;
     _loadAddress();
     _loadFolders();
+    ViewCountService.increment(widget.event.eventId);
   }
 
   Future<void> _loadFolders() async {
@@ -635,8 +637,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
         actions: [
           IconButton(
             icon: Icon(
-              _event.isFavorite ? Icons.star : Icons.star_border,
-              color: _event.isFavorite ? Colors.amber : null,
+              _event.isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: _event.isFavorite ? Colors.red : null,
             ),
             tooltip: _event.isFavorite
                 ? 'Remove from favorites'

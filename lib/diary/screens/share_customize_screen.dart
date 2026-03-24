@@ -93,20 +93,16 @@ class _ShareCustomizeScreenState extends State<ShareCustomizeScreen> {
   final GlobalKey _previewKey = GlobalKey();
   final GlobalKey _shareButtonKey = GlobalKey();
 
-  // 10 distinct presets
   static const _presetColors = [
-    Color(0xFF1A1A2E), // deep navy
-    Color(0xFF0F3460), // cobalt blue
-    Color(0xFF2D6A4F), // forest green
-    Color(0xFF774936), // warm brown
-    Color(0xFF533483), // purple
-    Color(0xFF6B2D2D), // burgundy
-    Color(0xFF2C3E50), // slate
-    Color(0xFF3D3D3D), // charcoal
-    Color(0xFFFFFFFF), // white
+    Color(0xFFBF616A),
+    Color(0xFF88C0D0),
+    Color(0xFFEBCB8B),
+    Color(0xFFA3BE8C),
+    Color(0xFF5E81AC),
+    Color(0xFFB48EAD),
   ];
 
-  Color _bgColor = const Color(0xFF1A1A2E);
+  Color _bgColor = const Color(0xFF5E81AC);
   bool _isSquare = true;
   bool _isSharing = false;
 

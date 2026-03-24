@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../database/app_database.dart';
 import '../models/diary_notification_settings.dart';
+import '../models/hundred_days_notif_settings.dart';
 import '../services/diary_notification_manager.dart';
+import '../services/hundred_days_notification_service.dart';
 
 class DiaryNotificationSettingsScreen extends ConsumerStatefulWidget {
   const DiaryNotificationSettingsScreen({super.key});
@@ -15,6 +18,7 @@ class DiaryNotificationSettingsScreen extends ConsumerStatefulWidget {
 class _DiaryNotificationSettingsScreenState
     extends ConsumerState<DiaryNotificationSettingsScreen> {
   OnThisDayNotifSettings _otd = const OnThisDayNotifSettings();
+  HundredDaysNotifSettings _hd = const HundredDaysNotifSettings();
   List<PeriodicNotifRule> _rules = [];
   bool _loaded = false;
 
@@ -29,6 +33,7 @@ class _DiaryNotificationSettingsScreenState
     if (mounted) {
       setState(() {
         _otd = settings.onThisDay;
+        _hd = settings.hundredDays;
         _rules = List.from(settings.periodicRules);
         _loaded = true;
       });
@@ -39,6 +44,31 @@ class _DiaryNotificationSettingsScreenState
     setState(() => _otd = s);
     await s.save();
     await DiaryNotificationManager.instance.scheduleOnThisDay(s);
+  }
+
+  Future<void> _saveHd(HundredDaysNotifSettings s) async {
+    setState(() => _hd = s);
+    await s.save();
+    // 변경 시 milestone 재계산 후 즉시 재스케줄
+    List<HundredDaysMilestone> milestones = [];
+    if (s.enabled) {
+      final db = AppDatabase();
+      try {
+        final now = DateTime.now().toUtc();
+        final events = await db.queryEventsInRange(
+          start: DateTime.utc(now.year - 10, 1, 1),
+          end: now.add(const Duration(days: 1)),
+        );
+        milestones = HundredDaysNotificationService.computeUpcomingMilestones(
+          events: events,
+          settings: s,
+          now: DateTime.now(),
+        );
+      } finally {
+        await db.close();
+      }
+    }
+    await DiaryNotificationManager.instance.scheduleHundredDays(s, milestones);
   }
 
   Future<void> _saveRule(int idx, PeriodicNotifRule rule) async {
@@ -99,6 +129,9 @@ class _DiaryNotificationSettingsScreenState
               children: [
                 _SectionHeader(title: 'On This Day'),
                 _buildOtdSection(),
+                const Divider(),
+                _SectionHeader(title: 'N×100일 기념일'),
+                _buildHundredDaysSection(),
                 const Divider(),
                 _SectionHeader(title: 'Periodic Reminders'),
                 _buildPeriodicSection(),
@@ -186,6 +219,38 @@ class _DiaryNotificationSettingsScreenState
             ),
           ],
         ],
+      ],
+    );
+  }
+
+  // ── N*100일 기념일 section ────────────────────────────────────────────────
+
+  Widget _buildHundredDaysSection() {
+    return Column(
+      children: [
+        SwitchListTile(
+          title: const Text('N×100일 기념일'),
+          subtitle: const Text('100일, 200일, 300일... 기념일에 알림'),
+          value: _hd.enabled,
+          onChanged: (v) => _saveHd(_hd.copyWith(enabled: v)),
+        ),
+        if (_hd.enabled)
+          ListTile(
+            leading: const Icon(Icons.access_time),
+            title: const Text('Time'),
+            trailing: Text(
+              '${_hd.hour.toString().padLeft(2, '0')}:${_hd.minute.toString().padLeft(2, '0')}',
+            ),
+            onTap: () async {
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: TimeOfDay(hour: _hd.hour, minute: _hd.minute),
+              );
+              if (picked != null) {
+                _saveHd(_hd.copyWith(hour: picked.hour, minute: picked.minute));
+              }
+            },
+          ),
       ],
     );
   }

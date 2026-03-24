@@ -13,7 +13,7 @@ class TagHelper {
 
   static const Map<String, String> defaultTagNames = {
     'red': 'Red',
-    'orange': 'Orange',
+    'orange': 'Sky',
     'yellow': 'Yellow',
     'green': 'Green',
     'blue': 'Blue',
@@ -23,17 +23,17 @@ class TagHelper {
   static Color getTagColor(String tag) {
     switch (tag) {
       case 'red':
-        return Colors.red;
+        return const Color(0xFFBF616A);
       case 'orange':
-        return Colors.orange;
+        return const Color(0xFF88C0D0);
       case 'yellow':
-        return Colors.yellow.shade700;
+        return const Color(0xFFEBCB8B);
       case 'green':
-        return Colors.green;
+        return const Color(0xFFA3BE8C);
       case 'blue':
-        return Colors.blue;
+        return const Color(0xFF5E81AC);
       case 'purple':
-        return Colors.purple;
+        return const Color(0xFFB48EAD);
       default:
         return Colors.grey;
     }

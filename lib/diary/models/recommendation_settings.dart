@@ -9,6 +9,7 @@ class RecommendationSettings {
     this.notificationEnabled = true,
     this.notificationHour = 20,
     this.notificationMinute = 0,
+    this.backgroundIndexingEnabled = false,
   });
 
   final bool enabled;
@@ -21,6 +22,7 @@ class RecommendationSettings {
   final bool notificationEnabled;
   final int notificationHour;
   final int notificationMinute;
+  final bool backgroundIndexingEnabled;
 
   static const _keyEnabled = 'rec_enabled';
   static const _keyModel = 'rec_model';
@@ -29,6 +31,7 @@ class RecommendationSettings {
   static const _keyNotifEnabled = 'rec_notif_enabled';
   static const _keyNotifHour = 'rec_notif_hour';
   static const _keyNotifMinute = 'rec_notif_minute';
+  static const _keyBgIndexing = 'rec_bg_indexing';
 
   Map<String, dynamic> toPrefsMap() => {
         _keyEnabled: enabled,
@@ -38,6 +41,7 @@ class RecommendationSettings {
         _keyNotifEnabled: notificationEnabled,
         _keyNotifHour: notificationHour,
         _keyNotifMinute: notificationMinute,
+        _keyBgIndexing: backgroundIndexingEnabled,
       };
 
   static RecommendationSettings fromPrefsMap(Map<String, dynamic> map) {
@@ -56,6 +60,7 @@ class RecommendationSettings {
       notificationEnabled: map[_keyNotifEnabled] as bool? ?? true,
       notificationHour: map[_keyNotifHour] as int? ?? 20,
       notificationMinute: map[_keyNotifMinute] as int? ?? 0,
+      backgroundIndexingEnabled: map[_keyBgIndexing] as bool? ?? false,
     );
   }
 
@@ -67,6 +72,7 @@ class RecommendationSettings {
     bool? notificationEnabled,
     int? notificationHour,
     int? notificationMinute,
+    bool? backgroundIndexingEnabled,
   }) {
     return RecommendationSettings(
       enabled: enabled ?? this.enabled,
@@ -76,6 +82,8 @@ class RecommendationSettings {
       notificationEnabled: notificationEnabled ?? this.notificationEnabled,
       notificationHour: notificationHour ?? this.notificationHour,
       notificationMinute: notificationMinute ?? this.notificationMinute,
+      backgroundIndexingEnabled:
+          backgroundIndexingEnabled ?? this.backgroundIndexingEnabled,
     );
   }
 }

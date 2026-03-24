@@ -344,6 +344,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   markerId: const MarkerId('post_location'),
                                   position:
                                       LatLng(_post.latitude!, _post.longitude!),
+                                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                                      BitmapDescriptor.hueRose),
                                   infoWindow: InfoWindow(
                                     title: _post.locationName ?? 'Location',
                                   ),

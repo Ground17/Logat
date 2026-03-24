@@ -1147,6 +1147,60 @@ class AppDatabase extends GeneratedDatabase {
     return rows.map((r) => r.read<String>('asset_id')).toList();
   }
 
+  Future<EventSummary?> getEventById(String eventId) async {
+    final rows = await customSelect(
+      '''
+      SELECT e.event_id, e.start_at, e.end_at, e.latitude, e.longitude,
+             e.asset_count, e.representative_asset_id, e.quality_score,
+             e.is_moving, e.is_manual, e.title, e.user_memo, e.is_favorite,
+             e.color, e.custom_address
+      FROM events e
+      WHERE e.event_id = ?
+      ''',
+      variables: [Variable<String>(eventId)],
+    ).get();
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    final assetMap = await _loadEventAssetMap([eventId]);
+    final tagMap = await _loadEventTagMap([eventId]);
+    return EventSummary(
+      eventId: row.read<String>('event_id'),
+      startAt: DateTime.fromMillisecondsSinceEpoch(
+        row.read<int>('start_at'),
+        isUtc: true,
+      ),
+      endAt: DateTime.fromMillisecondsSinceEpoch(
+        row.read<int>('end_at'),
+        isUtc: true,
+      ),
+      latitude: row.data['latitude'] as double?,
+      longitude: row.data['longitude'] as double?,
+      assetCount: row.read<int>('asset_count'),
+      representativeAssetId: row.read<String>('representative_asset_id'),
+      qualityScore: row.read<double>('quality_score'),
+      isMoving: row.read<int>('is_moving') == 1,
+      assetIds: assetMap[eventId] ?? const [],
+      tags: tagMap[eventId] ?? const [],
+      isManual: (row.data['is_manual'] as int? ?? 0) == 1,
+      title: row.data['title'] as String?,
+      userMemo: row.data['user_memo'] as String?,
+      isFavorite: (row.data['is_favorite'] as int? ?? 0) == 1,
+      color: row.data['color'] as int?,
+      customAddress: row.data['custom_address'] as String?,
+    );
+  }
+
+  /// Returns the subset of [assetIds] that are already indexed in the assets table.
+  Future<Set<String>> filterIndexedAssetIds(List<String> assetIds) async {
+    if (assetIds.isEmpty) return {};
+    final placeholders = List.filled(assetIds.length, '?').join(',');
+    final rows = await customSelect(
+      'SELECT asset_id FROM assets WHERE asset_id IN ($placeholders)',
+      variables: assetIds.map((id) => Variable<String>(id)).toList(),
+    ).get();
+    return rows.map((r) => r.read<String>('asset_id')).toSet();
+  }
+
   Future<void> deleteEvent(String eventId) {
     return transaction(() async {
       await customStatement(
