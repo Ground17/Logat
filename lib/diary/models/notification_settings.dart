@@ -21,8 +21,8 @@ class MemoriesNotificationSettings {
     this.intervalDays = 2,
     this.weekdays = const {1, 2, 3, 4, 5},
     this.onThisDayEnabled = true,
-    this.notificationTitle = 'N년 전 오늘의 기억',
-    this.notificationBody = '오늘 같은 날의 추억이 있어요',
+    this.notificationTitle = 'On This Day',
+    this.notificationBody = 'You have a memory from this day in the past',
   });
 
   MemoriesNotificationSettings copyWith({
@@ -91,8 +91,8 @@ class MemoriesNotificationSettings {
       intervalDays: prefs.getInt(_keyIntervalDays) ?? 2,
       weekdays: weekdays.isEmpty ? const {1, 2, 3, 4, 5} : weekdays,
       onThisDayEnabled: prefs.getBool(_keyOnThisDay) ?? true,
-      notificationTitle: prefs.getString(_keyTitle) ?? 'N년 전 오늘의 기억',
-      notificationBody: prefs.getString(_keyBody) ?? '오늘 같은 날의 추억이 있어요',
+      notificationTitle: prefs.getString(_keyTitle) ?? 'On This Day',
+      notificationBody: prefs.getString(_keyBody) ?? 'You have a memory from this day in the past',
     );
   }
 }

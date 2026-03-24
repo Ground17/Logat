@@ -42,7 +42,7 @@ class EventGroupingService {
         ? 'an unknown place'
         : '${event.latitude!.toStringAsFixed(2)}, ${event.longitude!.toStringAsFixed(2)}';
     final tags = event.tags.take(3).map((tag) => tag.name).join(', ');
-    return '${DateFormat('HH:mm').format(event.startAt.toLocal())}~${DateFormat('HH:mm').format(event.endAt.toLocal())}에 $locationText에서 ${tags.isEmpty ? '기록' : tags} 활동이 있었어요. 그날 가장 기억나는 장면은 무엇인가요?';
+    return 'From ${DateFormat('HH:mm').format(event.startAt.toLocal())} to ${DateFormat('HH:mm').format(event.endAt.toLocal())} at $locationText with ${tags.isEmpty ? 'logged activity' : tags}. What moment stands out most from that day?';
   }
 
   double _score(EventSummary event) {

@@ -33,7 +33,7 @@ final mapControllerProvider = StateProvider<GoogleMapController?>((ref) => null)
 
 // ─── User location ────────────────────────────────────────────────────────
 
-/// 현재 사용자 위치 (LatLng?). 권한 없거나 실패 시 null.
+/// Current user location (LatLng?). Null if permission denied or failed.
 final userLocationProvider = FutureProvider<LatLng?>((ref) async {
   try {
     final location = loc_pkg.Location();
@@ -50,7 +50,7 @@ final userLocationProvider = FutureProvider<LatLng?>((ref) async {
   return null;
 });
 
-/// Haversine 거리 계산 (km)
+/// Haversine distance calculation (km)
 double distanceKm(
     double lat1, double lon1, double lat2, double lon2) {
   const r = 6371.0;
@@ -64,7 +64,7 @@ double distanceKm(
   return r * 2 * atan2(sqrt(a), sqrt(1 - a));
 }
 
-/// 거리 레이블 (< Xkm 스타일). 너무 멀면 빈 문자열.
+/// Distance label (< Xkm style). Empty string if too far.
 String formatDistanceLabel(double km) {
   if (km < 0.1) return '< 100m';
   if (km < 0.5) return '< 500m';
@@ -323,6 +323,10 @@ final indexedAssetCountProvider = FutureProvider((ref) {
   return ref.watch(diaryRepositoryProvider).indexedAssetCount();
 });
 
+final lastIndexingDateProvider = FutureProvider<DateTime?>((ref) {
+  return ref.watch(appDatabaseProvider).getLastIndexingCompletedAt();
+});
+
 final locationClustersProvider = FutureProvider((ref) {
   return ref.watch(diaryRepositoryProvider).locationClusters();
 });
@@ -358,7 +362,7 @@ final onThisDayProvider = FutureProvider<List<EventSummary>>((ref) {
       );
 });
 
-// 항상 오늘 기준 365일 - dateRangeFilter와 무관
+// Always 365 days from today — independent of dateRangeFilter
 final yearlyDailyStatsProvider = FutureProvider<List<DailyStats>>((ref) {
   final now = DateTime.now().toUtc();
   final start = DateTime.utc(now.year - 1, now.month, now.day);
@@ -366,7 +370,7 @@ final yearlyDailyStatsProvider = FutureProvider<List<DailyStats>>((ref) {
   return ref.watch(diaryRepositoryProvider).dailyStats(start: start, end: end);
 });
 
-// family: year → DailyStats 리스트
+// family: year → DailyStats list
 final yearlyStatsProvider =
     FutureProvider.family<List<DailyStats>, int>((ref, year) {
   final start = DateTime.utc(year, 1, 1);
@@ -374,7 +378,7 @@ final yearlyStatsProvider =
   return ref.watch(diaryRepositoryProvider).dailyStats(start: start, end: end);
 });
 
-// family: year → LocationCluster 리스트
+// family: year → LocationCluster list
 final yearlyLocationClustersProvider =
     FutureProvider.family<List<LocationCluster>, int>((ref, year) {
   final start = DateTime.utc(year, 1, 1);
@@ -384,7 +388,7 @@ final yearlyLocationClustersProvider =
       .locationClustersInRange(start: start, end: end);
 });
 
-// family: (year, month) → LocationCluster 리스트
+// family: (year, month) → LocationCluster list
 final monthlyLocationClustersProvider =
     FutureProvider.family<List<LocationCluster>, (int, int)>((ref, ym) {
   final (year, month) = ym;
@@ -395,7 +399,7 @@ final monthlyLocationClustersProvider =
       .locationClustersInRange(start: start, end: end);
 });
 
-// family: (year, month) → DailyStats 리스트
+// family: (year, month) → DailyStats list
 final monthlyStatsProvider =
     FutureProvider.family<List<DailyStats>, (int, int)>((ref, ym) {
   final (year, month) = ym;
@@ -404,7 +408,7 @@ final monthlyStatsProvider =
   return ref.watch(diaryRepositoryProvider).dailyStats(start: start, end: end);
 });
 
-// LocationCluster에 주소 레이블을 붙인 확장 데이터 (TOP 5)
+// LocationCluster enriched with address labels (TOP 5)
 final enrichedLocationClustersProvider = FutureProvider<
     List<({LocationCluster cluster, String address})>>((ref) async {
   final clusters = await ref.watch(locationClustersProvider.future);
@@ -495,10 +499,7 @@ List<EventSummary> _applyFilter(
     if (filter.hasLocation && (e.latitude == null || e.longitude == null)) {
       return false;
     }
-    if (filter.hasMedia &&
-        (e.representativeAssetId == 'manual_no_photo' || e.assetCount == 0)) {
-      return false;
-    }
+    if (filter.isMilestoneDay && !_isMilestoneDayCheck(e.startAt)) return false;
     return true;
   }).toList();
 }
@@ -510,6 +511,19 @@ final filteredJournalEventsProvider = FutureProvider<List<EventSummary>>((ref) a
   final filter = ref.watch(diaryFilterProvider);
   final selectedDate = ref.watch(selectedDateProvider);
   var filtered = _applyFilter(events, filter, selectedDate);
+
+  // Async media-type filters (requires DB lookup)
+  if (filter.hasPhoto || filter.hasVideo) {
+    final db = ref.read(appDatabaseProvider);
+    if (filter.hasPhoto) {
+      final ids = await db.getEventIdsWithMediaType('image');
+      filtered = filtered.where((e) => ids.contains(e.eventId)).toList();
+    }
+    if (filter.hasVideo) {
+      final ids = await db.getEventIdsWithMediaType('video');
+      filtered = filtered.where((e) => ids.contains(e.eventId)).toList();
+    }
+  }
 
   final folderFilter = ref.watch(selectedFolderFilterProvider);
   if (folderFilter != null) {
@@ -550,6 +564,15 @@ final diaryViewModeProvider =
     StateNotifierProvider<ViewModeNotifier, DiaryViewMode>(
   (ref) => ViewModeNotifier(),
 );
+
+bool _isMilestoneDayCheck(DateTime eventDate) {
+  final today = DateTime.now().toLocal();
+  final local = eventDate.toLocal();
+  final days = DateTime(today.year, today.month, today.day)
+      .difference(DateTime(local.year, local.month, local.day))
+      .inDays;
+  return days > 0 && days % 100 == 0;
+}
 
 bool _isSpecialDay(DateTime eventDate) {
   final today = DateTime.now().toLocal();

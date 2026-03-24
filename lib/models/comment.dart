@@ -1,9 +1,9 @@
 class Comment {
   final int? id;
-  final int postId; // 어느 게시물에 달린 댓글인지
-  final int? aiPersonaId; // 어떤 AI가 작성했는지 (null이면 사용자)
-  final bool isUser; // 사용자가 작성한 댓글인지
-  final String content; // 댓글 내용
+  final int postId; // Which post this comment belongs to
+  final int? aiPersonaId; // Which AI wrote it (null = user)
+  final bool isUser; // Whether the comment was written by the user
+  final String content; // Comment content
   final DateTime createdAt;
 
   Comment({

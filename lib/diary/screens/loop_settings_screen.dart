@@ -18,16 +18,16 @@ class LoopSettingsScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Loop 알고리즘 설정')),
+      appBar: AppBar(title: const Text('Loop Algorithm')),
       body: ListView(
         children: [
-          // ── 가중치 섹션 ──────────────────────────────────────────────
-          _SectionHeader(title: '노출 가중치'),
+          // ── Weight section ────────────────────────────────────────────
+          _SectionHeader(title: 'Exposure Weights'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: Text(
-              '가중치가 높을수록 Loop에서 더 자주 먼저 나타납니다.\n'
-              '기본 가중치는 모든 게시물에 적용되는 최소값입니다.',
+              'Higher weights appear more frequently in Loop.\n'
+              'Base weight is the minimum applied to all posts.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context)
                         .colorScheme
@@ -39,8 +39,8 @@ class LoopSettingsScreen extends ConsumerWidget {
           const SizedBox(height: 8),
           _WeightTile(
             icon: Icons.tune_outlined,
-            label: '기본 가중치',
-            description: '모든 게시물의 기본 노출 확률',
+            label: 'Base Weight',
+            description: 'Minimum exposure probability for all posts',
             value: s.baseWeight,
             min: 1,
             max: 10,
@@ -48,33 +48,33 @@ class LoopSettingsScreen extends ConsumerWidget {
           ),
           _WeightTile(
             icon: Icons.favorite_outline,
-            label: '즐겨찾기 가중치',
-            description: '즐겨찾기한 게시물에 추가되는 가중치',
+            label: 'Favorites Weight',
+            description: 'Extra weight added for favorited posts',
             value: s.favoriteWeight,
             onChanged: (v) => update(s.copyWith(favoriteWeight: v)),
           ),
           _WeightTile(
             icon: Icons.history,
-            label: 'N년 전 오늘 / N×100일 가중치',
-            description: '오늘과 날짜가 같거나 N×100일인 게시물에 추가',
+            label: 'On This Day / N×100 Day Weight',
+            description: 'Extra weight for anniversary and milestone posts',
             value: s.onThisDayWeight,
             onChanged: (v) => update(s.copyWith(onThisDayWeight: v)),
           ),
           _WeightTile(
             icon: Icons.schedule_outlined,
-            label: '최근 30일 가중치',
-            description: '최근 30일 이내 게시물에 추가되는 가중치',
+            label: 'Recent 30 Days Weight',
+            description: 'Extra weight for posts within the last 30 days',
             value: s.recentWeight,
             onChanged: (v) => update(s.copyWith(recentWeight: v)),
           ),
           const Divider(),
 
-          // ── 조회수 섹션 ───────────────────────────────────────────────
-          _SectionHeader(title: '조회수 반영 방식'),
+          // ── View count section ────────────────────────────────────────
+          _SectionHeader(title: 'View Count Mode'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text(
-              '게시물 상세 화면을 열 때마다 조회수가 1씩 증가합니다.',
+              'View count increases by 1 each time you open a post.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context)
                         .colorScheme

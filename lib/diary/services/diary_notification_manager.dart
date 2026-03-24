@@ -39,7 +39,7 @@ class DiaryNotificationManager {
   // Periodic rule i: 200100 + i*30 (200100–200249)
   static int periodicBaseId(int idx) => 200100 + idx * 30;
 
-  // N*100일 기념일: 201000–201049
+  // N×100 day milestones: 201000–201049
   static const int hundredDaysBaseId = 201000;
 
   final FlutterLocalNotificationsPlugin _plugin =
@@ -107,7 +107,7 @@ class DiaryNotificationManager {
     await _historyService.replaceEntriesOfType('onThisDay');
     if (!s.enabled) return;
 
-    final title = (s.useAi && aiTitle != null) ? aiTitle : 'N년 전 오늘';
+    final title = (s.useAi && aiTitle != null) ? aiTitle : 'On This Day';
     final body = (s.useAi && aiBody != null)
         ? aiBody
         : 'See the event from N years ago';
@@ -253,33 +253,56 @@ class DiaryNotificationManager {
     }
   }
 
-  // ── N*100일 기념일 ────────────────────────────────────────────────────────
+  // ── N×100 Day Milestones ──────────────────────────────────────────────────
 
   Future<void> scheduleHundredDays(
     HundredDaysNotifSettings s,
-    List<HundredDaysMilestone> milestones,
-  ) async {
+    List<HundredDaysMilestone> milestones, {
+    String? aiTitle,
+    String? aiBody,
+  }) async {
     await cancelHundredDays();
     await _historyService.replaceEntriesOfType('hundredDays');
     if (!s.enabled) return;
 
     final details = _buildDetails();
 
-    for (var i = 0; i < milestones.length && i < 50; i++) {
-      final m = milestones[i];
-      final notifId = hundredDaysBaseId + i;
-      final scheduledTz = tz.TZDateTime.from(m.scheduledAt, tz.local);
+    // Group milestones by date (yyyy-MM-dd)
+    final byDate = <String, List<HundredDaysMilestone>>{};
+    for (final m in milestones) {
+      final local = m.scheduledAt.toLocal();
+      final key =
+          '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+      byDate.putIfAbsent(key, () => []).add(m);
+    }
+
+    final sortedKeys = byDate.keys.toList()..sort();
+    var idx = 0;
+    for (final dateKey in sortedKeys) {
+      if (idx >= 50) break;
+      final group = byDate[dateKey]!;
+      final notifId = hundredDaysBaseId + idx;
+      final first = group.first;
+      final scheduledTz = tz.TZDateTime.from(first.scheduledAt, tz.local);
       final entryId =
           'hundredDays_${notifId}_${scheduledTz.millisecondsSinceEpoch}';
-      final title = '${m.milestoneN}일 기념일';
-      final body = m.eventTitle != null
-          ? '"${m.eventTitle}" ${m.milestoneN}일째를 기념합니다 🎉'
-          : '오늘로 ${m.milestoneN}일이 되었어요 🎉';
+
+      final title = (s.useAi && aiTitle != null)
+          ? aiTitle
+          : group.length == 1
+              ? 'Day ${first.milestoneN} Milestone'
+              : '${group.length} Milestones Today';
+      final body = (s.useAi && aiBody != null)
+          ? aiBody
+          : group
+              .map((m) =>
+                  m.eventTitle != null ? '"${m.eventTitle}" day ${m.milestoneN}' : 'Day ${m.milestoneN}')
+              .join(', ');
+
       final payload = jsonEncode({
         'type': 'hundredDays',
-        'eventId': m.eventId,
-        'eventStartMs': m.eventStartAt.millisecondsSinceEpoch,
-        'milestone': m.milestoneN,
+        'eventIds': group.map((m) => m.eventId).toList(),
+        'milestones': group.map((m) => m.milestoneN).toList(),
         'entryId': entryId,
       });
 
@@ -298,9 +321,10 @@ class DiaryNotificationManager {
         type: 'hundredDays',
         title: title,
         body: body,
-        scheduledAt: m.scheduledAt,
+        scheduledAt: first.scheduledAt,
         payload: payload,
       ));
+      idx++;
     }
   }
 
@@ -333,6 +357,8 @@ class DiaryNotificationManager {
     String? otdAiBody,
     Map<int, ({String title, String body})>? periodicAiContent,
     List<HundredDaysMilestone>? hundredDaysMilestones,
+    String? hdAiTitle,
+    String? hdAiBody,
   }) async {
     await scheduleOnThisDay(
       settings.onThisDay,
@@ -349,7 +375,12 @@ class DiaryNotificationManager {
       );
     }
     if (hundredDaysMilestones != null) {
-      await scheduleHundredDays(settings.hundredDays, hundredDaysMilestones);
+      await scheduleHundredDays(
+        settings.hundredDays,
+        hundredDaysMilestones,
+        aiTitle: hdAiTitle,
+        aiBody: hdAiBody,
+      );
     }
   }
 
@@ -362,7 +393,7 @@ class DiaryNotificationManager {
       final type = data['type'] as String?;
       final entryId = data['entryId'] as String?;
 
-      // delivered 마킹
+      // Mark as delivered
       if (entryId != null) {
         await NotificationHistoryService().markDelivered(entryId);
       }
@@ -371,8 +402,9 @@ class DiaryNotificationManager {
         case 'onThisDay':
           await _navigateOnThisDay();
         case 'hundredDays':
-          final eventId = data['eventId'] as String?;
-          if (eventId != null) await _navigateHundredDays(eventId);
+          final eventIds = (data['eventIds'] as List?)?.cast<String>() ??
+              (data['eventId'] != null ? [data['eventId'] as String] : []);
+          if (eventIds.isNotEmpty) await _navigateHundredDays(eventIds);
         case 'periodic':
           _navigatePeriodic();
       }
@@ -399,7 +431,7 @@ class DiaryNotificationManager {
           builder: (_) => EventDetailScreen(event: events.first),
         ));
       } else {
-        // 이벤트 없으면 List 탭으로 전환
+        // No events — navigate to List tab
         ProviderScope.containerOf(context) // ignore: use_build_context_synchronously
             .read(pendingTabProvider.notifier)
             .state = 1;
@@ -409,20 +441,28 @@ class DiaryNotificationManager {
     }
   }
 
-  static Future<void> _navigateHundredDays(String eventId) async {
+  static Future<void> _navigateHundredDays(List<String> eventIds) async {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
 
-    final db = AppDatabase();
-    try {
-      final event = await db.getEventById(eventId);
-      if (event != null) {
-        nav.push(MaterialPageRoute(
-          builder: (_) => EventDetailScreen(event: event),
-        ));
+    if (eventIds.length == 1) {
+      final db = AppDatabase();
+      try {
+        final event = await db.getEventById(eventIds.first);
+        if (event != null) {
+          nav.push(MaterialPageRoute(
+            builder: (_) => EventDetailScreen(event: event),
+          ));
+        }
+      } finally {
+        await db.close();
       }
-    } finally {
-      await db.close();
+    } else {
+      // Multiple milestones on same day → go to List tab
+      final context = nav.context;
+      ProviderScope.containerOf(context) // ignore: use_build_context_synchronously
+          .read(pendingTabProvider.notifier)
+          .state = 1;
     }
   }
 

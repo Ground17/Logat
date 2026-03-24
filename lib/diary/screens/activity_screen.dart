@@ -102,7 +102,7 @@ class ActivityScreen extends ConsumerWidget {
   }
 }
 
-// ─── N년 전 오늘 카드 ────────────────────────────────────────────────────────
+// ─── On This Day card ─────────────────────────────────────────────────────────
 
 class _OnThisDayCard extends StatelessWidget {
   const _OnThisDayCard({required this.onThisDayAsync});

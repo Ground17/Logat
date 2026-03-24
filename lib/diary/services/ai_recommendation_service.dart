@@ -10,8 +10,8 @@ import '../models/recommendation_settings.dart';
 class AiRecommendationService {
   const AiRecommendationService();
 
-  /// 최근 이벤트, N년 전 오늘 이벤트, 위치 클러스터를 기반으로
-  /// AI 다이어리 작성 추천을 생성합니다.
+  /// Generates AI diary writing recommendations based on
+  /// recent events, on-this-day events, and location clusters.
   Future<List<DiaryRecommendation>> generate({
     required List<EventSummary> recentEvents,
     required List<EventSummary> onThisDayEvents,
@@ -20,7 +20,7 @@ class AiRecommendationService {
   }) async {
     final recommendations = <DiaryRecommendation>[];
 
-    // 1. N년 전 오늘 이벤트 추천 (최대 3개)
+    // 1. On-this-day event recommendations (up to 3)
     for (final event in onThisDayEvents.take(3)) {
       final rec = await _generateForEvent(
         event: event,
@@ -30,7 +30,7 @@ class AiRecommendationService {
       if (rec != null) recommendations.add(rec);
     }
 
-    // 2. 최근 사진 이벤트 추천 (최대 3개, 점수 높은 순)
+    // 2. Recent photo event recommendations (up to 3, sorted by score)
     final sortedRecent = [...recentEvents]
       ..sort((a, b) => b.qualityScore.compareTo(a.qualityScore));
     for (final event in sortedRecent.take(3)) {
@@ -42,7 +42,7 @@ class AiRecommendationService {
       if (rec != null) recommendations.add(rec);
     }
 
-    // 3. 위치 클러스터 기반 추천 (최대 2개)
+    // 3. Location cluster-based recommendations (up to 2)
     for (final cluster in clusters.take(2)) {
       final rec = await _generateForCluster(
         cluster: cluster,
@@ -170,7 +170,7 @@ Response format (JSON):
 
   Map<String, dynamic>? _parseJson(String text) {
     try {
-      // JSON 블록 추출 (```json ... ``` 형식 대응)
+      // Extract JSON block (handles ```json ... ``` format)
       final cleaned = text
           .replaceAll(RegExp(r'```json\s*'), '')
           .replaceAll(RegExp(r'```\s*'), '')

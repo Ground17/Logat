@@ -40,7 +40,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final ImagePicker _picker = ImagePicker();
   final Location _location = Location();
 
-  List<String> _mediaPaths = []; // 임시 경로 (저장 전)
+  List<String> _mediaPaths = []; // Temporary paths (before saving)
   bool _isPosting = false;
   double? _latitude;
   double? _longitude;

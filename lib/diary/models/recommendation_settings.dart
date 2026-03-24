@@ -1,4 +1,4 @@
-/// 사용자가 설정에서 관리하는 AI 다이어리 추천 설정
+/// AI diary recommendation settings managed by the user in settings
 class RecommendationSettings {
   const RecommendationSettings({
     this.enabled = true,
@@ -16,7 +16,7 @@ class RecommendationSettings {
   final RecommendationModel model;
   final RecommendationFormat format;
 
-  /// 사용자가 AI에게 직접 입력하는 추천 문구 스타일 지시문
+  /// Style instruction the user enters directly to guide the AI
   final String promptStyle;
 
   final bool notificationEnabled;
@@ -134,7 +134,7 @@ enum RecommendationFormat {
   }
 }
 
-/// 생성된 추천 결과 하나
+/// A single generated recommendation result
 class DiaryRecommendation {
   const DiaryRecommendation({
     required this.title,

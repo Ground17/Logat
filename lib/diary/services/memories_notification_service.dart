@@ -24,8 +24,8 @@ class MemoriesNotificationService {
     return NotificationDetails(
       android: AndroidNotificationDetails(
         channelId,
-        '다이어리 추억',
-        channelDescription: '오늘 같은 날의 과거 기억을 알려드립니다',
+        'Diary Memories',
+        channelDescription: 'Reminders of memories from the same day in past years',
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
       ),
@@ -59,10 +59,10 @@ class MemoriesNotificationService {
 
     await _notifications.zonedSchedule(
       notificationId,
-      'N년 전 오늘의 기억',
-      '오늘 같은 날의 추억이 있어요',
+      'On This Day',
+      'You have a memory from this day in the past',
       scheduledDate,
-      _buildDetails(title: 'N년 전 오늘의 기억', body: '오늘 같은 날의 추억이 있어요'),
+      _buildDetails(title: 'On This Day', body: 'You have a memory from this day in the past'),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
     );

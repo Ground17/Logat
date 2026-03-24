@@ -86,7 +86,7 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
       case 0: // Loop — folder shortcut
         return FloatingActionButton.small(
           heroTag: 'openFolders',
-          tooltip: '폴더 관리',
+          tooltip: 'Manage Folders',
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const FolderBrowserScreen()),
@@ -174,7 +174,7 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
-            tooltip: '알림 내역',
+            tooltip: 'Notification History',
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -347,10 +347,25 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Has photo / video'),
-                value: _filter.hasMedia,
+                title: const Text('Has photo'),
+                value: _filter.hasPhoto,
                 onChanged: (v) =>
-                    _applyFilter(_filter.copyWith(hasMedia: v)),
+                    _applyFilter(_filter.copyWith(hasPhoto: v)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Has video'),
+                value: _filter.hasVideo,
+                onChanged: (v) =>
+                    _applyFilter(_filter.copyWith(hasVideo: v)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('N×100 Day Anniversary'),
+                subtitle: const Text('Only posts whose day count is a multiple of 100'),
+                value: _filter.isMilestoneDay,
+                onChanged: (v) =>
+                    _applyFilter(_filter.copyWith(isMilestoneDay: v)),
               ),
               const Divider(),
               // Date range
@@ -463,8 +478,8 @@ class _FolderFilterTile extends ConsumerWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.folder_outlined),
-      title: Text(selectedFolder?.name ?? '모든 폴더'),
-      subtitle: const Text('폴더 필터'),
+      title: Text(selectedFolder?.name ?? 'All Folders'),
+      subtitle: const Text('Folder Filter'),
       trailing: selectedFolder != null
           ? IconButton(
               icon: const Icon(Icons.clear),
@@ -485,7 +500,7 @@ class _FolderFilterTile extends ConsumerWidget {
           children: [
             ListTile(
               leading: const Icon(Icons.folder_off_outlined),
-              title: const Text('모든 폴더'),
+              title: const Text('All Folders'),
               onTap: () {
                 onFolderSelected(null);
                 Navigator.pop(ctx);

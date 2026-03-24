@@ -319,7 +319,7 @@ class _CardGalleryState extends State<EventCardGallery> {
   }
 }
 
-// ─── 인덱싱 유도 화면 ────────────────────────────────────────────────────────
+// ─── Indexing prompt view ─────────────────────────────────────────────────────
 
 class _IndexingPromptView extends ConsumerStatefulWidget {
   const _IndexingPromptView();
@@ -349,17 +349,17 @@ class _IndexingPromptViewState extends ConsumerState<_IndexingPromptView> {
     final enable = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('백그라운드 자동 인덱싱'),
+        title: const Text('Auto Background Indexing'),
         content: const Text(
-            '매일 자동으로 사진을 인덱싱할까요?\n설정에서 언제든지 변경할 수 있습니다.'),
+            'Automatically index photos every day?\nYou can change this anytime in Settings.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('나중에'),
+            child: const Text('Later'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('켜기'),
+            child: const Text('Enable'),
           ),
         ],
       ),
@@ -395,7 +395,7 @@ class _IndexingPromptViewState extends ConsumerState<_IndexingPromptView> {
             ),
             const SizedBox(height: 16),
             Text(
-              '추억을 불러오세요',
+              'Relive Your Memories',
               style: Theme.of(context)
                   .textTheme
                   .titleLarge
@@ -403,7 +403,7 @@ class _IndexingPromptViewState extends ConsumerState<_IndexingPromptView> {
             ),
             const SizedBox(height: 8),
             Text(
-              '사진 라이브러리를 인덱싱하면\n촬영한 사진이 자동으로 일기가 됩니다.',
+              'Index your photo library\nto turn your photos into diary entries.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Theme.of(context)
@@ -420,7 +420,7 @@ class _IndexingPromptViewState extends ConsumerState<_IndexingPromptView> {
               ),
               const SizedBox(height: 8),
               Text(
-                indexing.message ?? '인덱싱 중...',
+                indexing.message ?? 'Indexing...',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ] else ...[
@@ -428,7 +428,7 @@ class _IndexingPromptViewState extends ConsumerState<_IndexingPromptView> {
               FilledButton.icon(
                 onPressed: _runIndex,
                 icon: const Icon(Icons.bolt_outlined),
-                label: const Text('사진 인덱싱 시작'),
+                label: const Text('Start Indexing'),
               ),
             ],
           ],

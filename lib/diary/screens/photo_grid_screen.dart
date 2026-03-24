@@ -46,13 +46,13 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
-                '열 수 설정',
+                'Columns',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
             for (int n = 3; n <= 5; n++)
               ListTile(
-                title: Text('$n열'),
+                title: Text('$n col'),
                 trailing: n == current
                     ? Icon(Icons.check,
                         color: Theme.of(ctx).colorScheme.primary)

@@ -25,7 +25,7 @@ class MemoryLoopView extends ConsumerWidget {
       data: (events) {
         if (events.isEmpty) {
           return const Center(
-            child: Text('추억이 없어요', style: TextStyle(fontSize: 18)),
+            child: Text('No memories yet', style: TextStyle(fontSize: 18)),
           );
         }
         return _LoopPageView(events: events);
@@ -45,9 +45,9 @@ String? _specialDayLabel(DateTime eventDate) {
   if (days <= 0) return null;
   if (today.month == local.month && today.day == local.day) {
     final years = today.year - local.year;
-    if (years > 0) return '🎊 $years주년';
+    if (years > 0) return '🎊 $years-year anniversary';
   }
-  if (days % 100 == 0) return '🎉 $days일';
+  if (days % 100 == 0) return '🎉 Day $days';
   return null;
 }
 
@@ -57,9 +57,9 @@ String _daysAgoLabel(DateTime eventDate) {
   final days = DateTime(today.year, today.month, today.day)
       .difference(DateTime(local.year, local.month, local.day))
       .inDays;
-  if (days == 0) return '오늘';
-  if (days == 1) return '어제';
-  return '$days일 전';
+  if (days == 0) return 'Today';
+  if (days == 1) return 'Yesterday';
+  return '$days days ago';
 }
 
 // ─── Vertical PageView (event level) ─────────────────────────────────────
@@ -115,9 +115,13 @@ class _LoopPage extends ConsumerStatefulWidget {
   ConsumerState<_LoopPage> createState() => _LoopPageState();
 }
 
-class _LoopPageState extends ConsumerState<_LoopPage> {
+class _LoopPageState extends ConsumerState<_LoopPage>
+    with SingleTickerProviderStateMixin {
   bool _isFavorite = false;
   int _mediaPage = 0;
+  late final AnimationController _heartCtrl;
+  Offset _heartPos = Offset.zero;
+  final ValueNotifier<double> _speedNotifier = ValueNotifier(1.0);
 
   List<String> get _mediaIds =>
       widget.event.assetIds.where((id) => id != 'manual_no_photo').toList();
@@ -126,6 +130,17 @@ class _LoopPageState extends ConsumerState<_LoopPage> {
   void initState() {
     super.initState();
     _isFavorite = widget.event.isFavorite;
+    _heartCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 750),
+    );
+  }
+
+  @override
+  void dispose() {
+    _heartCtrl.dispose();
+    _speedNotifier.dispose();
+    super.dispose();
   }
 
   Future<void> _toggleFavorite() async {
@@ -137,15 +152,38 @@ class _LoopPageState extends ConsumerState<_LoopPage> {
     ref.invalidate(filteredJournalEventsProvider);
   }
 
+  void _handleDoubleTap() {
+    _toggleFavorite();
+    _heartCtrl.forward(from: 0.0);
+  }
+
+  void _handleLongPressStart(LongPressStartDetails d) {
+    final w = MediaQuery.of(context).size.width;
+    if (d.localPosition.dx < w * 0.22 || d.localPosition.dx > w * 0.78) {
+      _speedNotifier.value = 2.0;
+    }
+  }
+
+  void _handleLongPressEnd(LongPressEndDetails _) {
+    _speedNotifier.value = 1.0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final event = widget.event;
     final ids = _mediaIds;
     final specialLabel = _specialDayLabel(event.startAt);
     final dateLabel =
-        '${DateFormat('yyyy년 M월 d일').format(event.startAt.toLocal())}  ·  ${_daysAgoLabel(event.startAt)}';
+        '${DateFormat('MMM d, yyyy').format(event.startAt.toLocal())}  ·  ${_daysAgoLabel(event.startAt)}';
 
-    return Stack(
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onDoubleTapDown: (d) => setState(() => _heartPos = d.localPosition),
+      onDoubleTap: _handleDoubleTap,
+      onLongPressStart: _handleLongPressStart,
+      onLongPressEnd: _handleLongPressEnd,
+      onLongPressCancel: () => _speedNotifier.value = 1.0,
+      child: Stack(
       fit: StackFit.expand,
       children: [
         // 1. Media slider (background)
@@ -154,6 +192,7 @@ class _LoopPageState extends ConsumerState<_LoopPage> {
           child: _LoopMediaSlider(
             assetIds: ids,
             isPageActive: widget.isActive,
+            speedNotifier: _speedNotifier,
             onPageChanged: (i) => setState(() => _mediaPage = i),
           ),
         ),
@@ -302,8 +341,75 @@ class _LoopPageState extends ConsumerState<_LoopPage> {
             ],
           ),
         ),
+
+        // 5. Double-tap heart animation
+        AnimatedBuilder(
+          animation: _heartCtrl,
+          builder: (ctx, _) {
+            if (!_heartCtrl.isAnimating && !_heartCtrl.isCompleted) {
+              return const SizedBox.shrink();
+            }
+            final scale = Tween<double>(begin: 0.4, end: 1.6).animate(
+              CurvedAnimation(
+                parent: _heartCtrl,
+                curve: const Interval(0.0, 0.6, curve: Curves.elasticOut),
+              ),
+            );
+            final fade = Tween<double>(begin: 1.0, end: 0.0).animate(
+              CurvedAnimation(
+                parent: _heartCtrl,
+                curve: const Interval(0.55, 1.0, curve: Curves.easeOut),
+              ),
+            );
+            return Positioned(
+              left: (_heartPos.dx - 44).clamp(0, double.infinity),
+              top: (_heartPos.dy - 44).clamp(0, double.infinity),
+              child: IgnorePointer(
+                child: FadeTransition(
+                  opacity: fade,
+                  child: ScaleTransition(
+                    scale: scale,
+                    child: const Icon(Icons.favorite,
+                        color: Colors.white, size: 88),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+
+        // 6. 2× speed indicator
+        ValueListenableBuilder<double>(
+          valueListenable: _speedNotifier,
+          builder: (ctx, speed, _) {
+            if (speed <= 1.0) return const SizedBox.shrink();
+            return Positioned(
+              top: 16,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    '2×',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ],
-    );
+    ),  // end inner Stack
+    );  // end GestureDetector
   }
 }
 
@@ -313,11 +419,13 @@ class _LoopMediaSlider extends StatefulWidget {
   const _LoopMediaSlider({
     required this.assetIds,
     required this.isPageActive,
+    required this.speedNotifier,
     required this.onPageChanged,
   });
 
   final List<String> assetIds;
   final bool isPageActive;
+  final ValueNotifier<double> speedNotifier;
   final ValueChanged<int> onPageChanged;
 
   @override
@@ -346,6 +454,7 @@ class _LoopMediaSliderState extends State<_LoopMediaSlider> {
       return _MediaTile(
         assetId: widget.assetIds[0],
         isActive: widget.isPageActive,
+        speedNotifier: widget.speedNotifier,
       );
     }
     return PageView.builder(
@@ -360,6 +469,7 @@ class _LoopMediaSliderState extends State<_LoopMediaSlider> {
         key: ValueKey(widget.assetIds[i]),
         assetId: widget.assetIds[i],
         isActive: widget.isPageActive && i == _currentMedia,
+        speedNotifier: widget.speedNotifier,
       ),
     );
   }
@@ -372,10 +482,12 @@ class _MediaTile extends StatefulWidget {
     super.key,
     required this.assetId,
     required this.isActive,
+    required this.speedNotifier,
   });
 
   final String assetId;
   final bool isActive;
+  final ValueNotifier<double> speedNotifier;
 
   @override
   State<_MediaTile> createState() => _MediaTileState();
@@ -385,21 +497,33 @@ class _MediaTileState extends State<_MediaTile> {
   Uint8List? _imageBytes;
   VideoPlayerController? _videoCtrl;
   bool _loading = true;
+  late ValueNotifier<double> _speedNotifier;
 
   @override
   void initState() {
     super.initState();
+    _speedNotifier = widget.speedNotifier;
+    _speedNotifier.addListener(_onSpeedChanged);
     _load();
   }
 
   @override
   void didUpdateWidget(_MediaTile old) {
     super.didUpdateWidget(old);
+    if (widget.speedNotifier != _speedNotifier) {
+      _speedNotifier.removeListener(_onSpeedChanged);
+      _speedNotifier = widget.speedNotifier;
+      _speedNotifier.addListener(_onSpeedChanged);
+    }
     if (!widget.isActive && old.isActive) {
       _videoCtrl?.pause();
     } else if (widget.isActive && !old.isActive) {
       _videoCtrl?.play();
     }
+  }
+
+  void _onSpeedChanged() {
+    _videoCtrl?.setPlaybackSpeed(_speedNotifier.value);
   }
 
   Future<void> _load() async {
@@ -431,6 +555,7 @@ class _MediaTileState extends State<_MediaTile> {
 
   @override
   void dispose() {
+    _speedNotifier.removeListener(_onSpeedChanged);
     _videoCtrl?.dispose();
     super.dispose();
   }
@@ -492,9 +617,9 @@ class _MediaTileState extends State<_MediaTile> {
   }
 }
 
-// ─── 주소 + 거리 행 ────────────────────────────────────────────────────────
+// ─── Address + distance row ───────────────────────────────────────────────
 
-/// [dark] = true: Loop (흰색 텍스트), false: List (기본 테마 색)
+/// [dark] = true: Loop (white text), false: List (default theme color)
 class EventAddressRow extends ConsumerWidget {
   const EventAddressRow({super.key, required this.event, this.dark = false});
 
@@ -517,7 +642,7 @@ class EventAddressRow extends ConsumerWidget {
       if (label.isNotEmpty) distLabel = label;
     }
 
-    // 주소도 없고 거리도 없으면 렌더링 안 함
+    // Don't render if there's no address and no distance
     if (event.customAddress == null && distLabel == null) {
       return const SizedBox.shrink();
     }

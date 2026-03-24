@@ -11,14 +11,14 @@ class HundredDaysMilestone {
   });
 
   final String eventId;
-  final DateTime eventStartAt; // payload용 원본 시각
+  final DateTime eventStartAt; // original timestamp for payload
   final int milestoneN;        // 100, 200, 300...
-  final DateTime scheduledAt;  // milestone 날짜 + 설정된 hour:minute
+  final DateTime scheduledAt;  // milestone date + configured hour:minute
   final String? eventTitle;
 }
 
 class HundredDaysNotificationService {
-  /// 알림을 보낼 고정 milestone 목록 (일 수)
+  /// Fixed milestone list to notify (in days)
   static const List<int> milestones = [
     100, 200, 300, 400, 500, 600, 700, 800, 900,
     1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000,
@@ -35,10 +35,10 @@ class HundredDaysNotificationService {
     for (final event in events) {
       final origin = event.startAt.toLocal();
       final daysSince = now.difference(origin).inDays;
-      if (daysSince < 0) continue; // 미래 이벤트 제외
+      if (daysSince < 0) continue; // Skip future events
 
       for (final n in milestones) {
-        if (n <= daysSince) continue; // 이미 지난 milestone 스킵
+        if (n <= daysSince) continue; // Skip already-passed milestones
 
         final milestoneDate = origin.add(Duration(days: n));
         final scheduledAt = DateTime(
@@ -59,12 +59,12 @@ class HundredDaysNotificationService {
           eventTitle: event.title,
         ));
 
-        // 이 이벤트에서 첫 번째 미래 milestone만 수집 (다음 milestone은 너무 먼 미래)
+        // Only collect the first upcoming milestone per event (subsequent ones are too far ahead)
         break;
       }
     }
 
-    // scheduledAt 오름차순 정렬 후 상위 maxAhead개
+    // Sort by scheduledAt ascending and return top maxAhead entries
     results.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
     return results.take(maxAhead).toList();
   }

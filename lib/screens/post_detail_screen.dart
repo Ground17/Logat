@@ -47,17 +47,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
 
-    // 포스트 정보 새로고침
+    // Refresh post data
     final updatedPost = await _db.getPost(_post.id!);
     if (updatedPost != null) {
       _post = updatedPost;
     }
 
-    // 댓글과 좋아요 로드
+    // Load comments and likes
     final comments = await _db.getCommentsByPost(_post.id!);
     final likes = await _db.getLikesByPost(_post.id!);
 
-    // 사용자가 좋아요를 눌렀는지 확인
+    // Check whether the user has liked this post
     final userLiked = likes.any((like) => like.isUser);
 
     setState(() {
@@ -249,7 +249,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           const SizedBox(height: 16),
                         ],
 
-                        // 좋아요, 댓글, 조회수 + 좋아요 버튼
+                        // Likes, comments, view count + like button
                         Row(
                           children: [
                             IconButton(

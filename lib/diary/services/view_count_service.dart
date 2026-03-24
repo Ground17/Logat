@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 이벤트 조회수를 SharedPreferences에 저장/조회합니다.
+/// Stores and retrieves event view counts in SharedPreferences.
 class ViewCountService {
   static const _key = 'event_view_counts';
 

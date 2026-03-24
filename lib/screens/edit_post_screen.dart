@@ -536,7 +536,7 @@ Return ONLY a JSON array of strings, e.g. ["travel","sunset","friends"]
         tag: _selectedTag,
         keywords: _keywords,
         postDate: _postDate,
-        // enableAiReactions는 수정하지 않음 - 기존 값 유지
+        // Do not modify enableAiReactions — keep the existing value
         updatedAt: DateTime.now(),
       );
 

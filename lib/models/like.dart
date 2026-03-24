@@ -1,8 +1,8 @@
 class Like {
   final int? id;
-  final int postId; // 어느 게시물에 좋아요를 눌렀는지
-  final int? aiPersonaId; // 어떤 AI가 좋아요를 눌렀는지 (null이면 사용자)
-  final bool isUser; // 사용자가 누른 좋아요인지
+  final int postId; // Which post was liked
+  final int? aiPersonaId; // Which AI liked it (null = user)
+  final bool isUser; // Whether the like was from the user
   final DateTime createdAt;
 
   Like({

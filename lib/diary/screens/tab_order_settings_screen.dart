@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/diary_providers.dart';
 
-/// 탭 이름, 아웃라인 아이콘, 선택 아이콘 정의 (logical tab ID 기준)
+/// Tab labels, outline icons, and selected icon definitions (by logical tab ID)
 const Map<int, String> kTabLabels = {
   0: 'Loop',
   1: 'List',
@@ -30,13 +30,13 @@ class TabOrderSettingsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('탭 순서 설정'),
+        title: const Text('Tab Order'),
         actions: [
           TextButton(
             onPressed: () async {
               await notifier.setOrder([0, 1, 2, 3, 4]);
             },
-            child: const Text('초기화'),
+            child: const Text('Reset'),
           ),
         ],
       ),
@@ -45,7 +45,7 @@ class TabOrderSettingsScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              '드래그하여 탭 순서를 변경하세요.',
+              'Drag to reorder tabs.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context)
                         .colorScheme

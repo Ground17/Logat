@@ -122,7 +122,7 @@ class FolderDepthException implements Exception {
   const FolderDepthException();
 
   @override
-  String toString() => '폴더 깊이는 최대 5단계까지 허용됩니다.';
+  String toString() => 'Folder nesting is limited to 5 levels.';
 }
 
 class PersistedEventRecord {
@@ -1188,6 +1188,29 @@ class AppDatabase extends GeneratedDatabase {
       color: row.data['color'] as int?,
       customAddress: row.data['custom_address'] as String?,
     );
+  }
+
+  /// Returns the DateTime when indexing last completed, or null if never.
+  Future<DateTime?> getLastIndexingCompletedAt() async {
+    final rows = await customSelect(
+      'SELECT completed_at FROM indexing_state WHERE singleton_id = 1',
+    ).get();
+    if (rows.isEmpty) return null;
+    final ms = rows.first.data['completed_at'] as int?;
+    if (ms == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+  }
+
+  /// Returns event IDs that have at least one asset of [mediaType] ('image' or 'video').
+  Future<Set<String>> getEventIdsWithMediaType(String mediaType) async {
+    final rows = await customSelect(
+      '''SELECT DISTINCT ea.event_id
+         FROM event_assets ea
+         JOIN assets a ON ea.asset_id = a.asset_id
+         WHERE a.media_type = ?''',
+      variables: [Variable<String>(mediaType)],
+    ).get();
+    return rows.map((r) => r.read<String>('event_id')).toSet();
   }
 
   /// Returns the subset of [assetIds] that are already indexed in the assets table.

@@ -128,17 +128,17 @@ class _FeedScreenState extends State<FeedScreen> {
         _dateFilterType = DateFilterType.values[
             prefs.getInt('dateFilterType') ?? DateFilterType.postDate.index];
 
-        // 저장된 보기 모드 복원
+        // Restore saved view mode
         _viewMode =
             ViewMode.values[prefs.getInt('viewMode') ?? ViewMode.list.index];
 
-        // 저장된 태그 복원
+        // Restore saved tags
         final savedTags = prefs.getStringList('selectedTags');
         if (savedTags != null) {
           _selectedTags = savedTags.toSet();
         }
 
-        // 저장된 날짜 범위 복원
+        // Restore saved date range
         final startDate = prefs.getString('dateRangeStart');
         final endDate = prefs.getString('dateRangeEnd');
         if (startDate != null) {
@@ -149,7 +149,7 @@ class _FeedScreenState extends State<FeedScreen> {
         }
       });
     } catch (e) {
-      print('필터 복원 중 오류: $e');
+      print('Error restoring filters: $e');
     }
   }
 
@@ -166,10 +166,10 @@ class _FeedScreenState extends State<FeedScreen> {
       await prefs.setInt('dateFilterType', _dateFilterType.index);
       await prefs.setStringList('selectedTags', _selectedTags.toList());
 
-      // 보기 모드 저장
+      // Save view mode
       await prefs.setInt('viewMode', _viewMode.index);
 
-      // 날짜 범위 저장
+      // Save date range
       if (_dateRangeStart != null) {
         await prefs.setString(
             'dateRangeStart', _dateRangeStart!.toIso8601String());
@@ -182,7 +182,7 @@ class _FeedScreenState extends State<FeedScreen> {
         await prefs.remove('dateRangeEnd');
       }
     } catch (e) {
-      print('필터 저장 중 오류: $e');
+      print('Error saving filters: $e');
     }
   }
 
@@ -368,7 +368,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _showFilterDialog() {
-    // 임시 변수로 현재 필터 설정값 복사
+    // Copy current filter values into temporary variables
     String tempSearchQuery = _searchQuery;
     bool tempFilterLikedPosts = _filterLikedPosts;
     bool tempFilterSimilarDate = _filterSimilarDate;
@@ -1168,7 +1168,7 @@ class _PostCardState extends State<PostCard> {
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
-                  // 이미지나 동영상을 탭하면 post_detail_screen으로 이동
+                  // Navigate to post_detail_screen when image or video is tapped
                   widget.onTap();
                 },
                 child: Stack(
@@ -1460,7 +1460,7 @@ class _MapViewState extends State<MapView> {
   }
 
   LatLngBounds _calculateBounds() {
-    // 지구 반지름 기준 거리: 약 6,371km / 111km per degree ≈ 57도
+    // Earth radius threshold: ~6,371km / 111km per degree ≈ 57 degrees
     const double earthRadiusThreshold = 57;
 
     double minLat = widget.posts.first.latitude!;
@@ -1474,11 +1474,11 @@ class _MapViewState extends State<MapView> {
       if (post.longitude! < minLng) minLng = post.longitude!;
       if (post.longitude! > maxLng) maxLng = post.longitude!;
 
-      // 범위가 지구 반지름 이상이면 바로 첫 번째 게시물 기준으로 반환
+      // If range exceeds earth radius threshold, return bounds based on the first post
       final latDiff = maxLat - minLat;
       final lngDiff = maxLng - minLng;
       if (latDiff > earthRadiusThreshold || lngDiff > earthRadiusThreshold) {
-        final padding = 0.05; // 약 5km
+        final padding = 0.05; // ~5km
         return LatLngBounds(
           southwest: LatLng(
             widget.posts.first.latitude! - padding,

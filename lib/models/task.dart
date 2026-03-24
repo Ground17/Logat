@@ -1,24 +1,24 @@
 enum TaskRecurrenceType {
-  none, // 한 번만
-  daily, // 매일
-  weekly, // 매주 특정 요일
-  monthly, // 매월 특정 일
-  interval, // N일마다
+  none, // Once only
+  daily, // Every day
+  weekly, // Weekly on specific weekdays
+  monthly, // Monthly on a specific day
+  interval, // Every N days
 }
 
 class Task {
   final int? id;
-  final int? aiPersonaId; // 어떤 AI가 감지했는지
-  final String title; // 작업 제목
-  final String? description; // 작업 설명
-  final DateTime? dueDate; // 특정 날짜 (none, weekly, monthly인 경우)
-  final TaskRecurrenceType recurrenceType; // 반복 유형
-  final int? intervalDays; // interval인 경우 N일
-  final List<int>? weekdays; // weekly인 경우 요일 (1=Monday, 7=Sunday)
-  final int? monthDay; // monthly인 경우 일 (1-31)
-  final String? time; // 알림 시간 (HH:mm 형식)
-  final bool isCompleted; // 완료 여부
-  final DateTime? lastNotificationDate; // 마지막 알림 날짜 (반복 작업용)
+  final int? aiPersonaId; // Which AI detected this
+  final String title; // Task title
+  final String? description; // Task description
+  final DateTime? dueDate; // Specific date (for none, weekly, monthly)
+  final TaskRecurrenceType recurrenceType; // Recurrence type
+  final int? intervalDays; // N days for interval type
+  final List<int>? weekdays; // Weekdays for weekly type (1=Monday, 7=Sunday)
+  final int? monthDay; // Day of month for monthly type (1-31)
+  final String? time; // Notification time (HH:mm format)
+  final bool isCompleted; // Whether completed
+  final DateTime? lastNotificationDate; // Last notification date (for recurring tasks)
   final DateTime createdAt;
   final DateTime? completedAt;
 

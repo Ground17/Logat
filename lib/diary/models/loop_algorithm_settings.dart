@@ -2,30 +2,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum LoopViewCountMode {
   ignore,
-  boostUnwatched, // 조회 적은 게시물 우선
-  boostWatched,   // 조회 많은 게시물 우선
+  boostUnwatched, // Prioritize less-viewed posts
+  boostWatched,   // Prioritize most-viewed posts
 }
 
 extension LoopViewCountModeLabel on LoopViewCountMode {
   String get label {
     switch (this) {
       case LoopViewCountMode.ignore:
-        return '조회수 무시';
+        return 'Ignore View Count';
       case LoopViewCountMode.boostUnwatched:
-        return '안 본 것 우선 노출';
+        return 'Boost Unwatched';
       case LoopViewCountMode.boostWatched:
-        return '많이 본 것 우선 노출';
+        return 'Boost Most Watched';
     }
   }
 
   String get description {
     switch (this) {
       case LoopViewCountMode.ignore:
-        return '조회수를 Loop 순서에 반영하지 않습니다';
+        return 'View count does not affect Loop order';
       case LoopViewCountMode.boostUnwatched:
-        return '조회수가 낮은 게시물이 더 자주 노출됩니다';
+        return 'Posts with fewer views appear more often';
       case LoopViewCountMode.boostWatched:
-        return '조회수가 높은 게시물이 더 자주 노출됩니다';
+        return 'Posts with more views appear more often';
     }
   }
 }
@@ -39,15 +39,15 @@ class LoopAlgorithmSettings {
     this.viewCountMode = LoopViewCountMode.boostUnwatched,
   });
 
-  /// 즐겨찾기 이벤트 추가 가중치 (0~10)
+  /// Extra weight for favorited events (0–10)
   final int favoriteWeight;
-  /// N년 전 오늘 / N×100일 이벤트 추가 가중치 (0~10)
+  /// Extra weight for on-this-day / N×100 day events (0–10)
   final int onThisDayWeight;
-  /// 최근 30일 이내 이벤트 추가 가중치 (0~10)
+  /// Extra weight for events within the last 30 days (0–10)
   final int recentWeight;
-  /// 모든 이벤트의 기본 가중치 (1~10)
+  /// Base weight for all events (1–10)
   final int baseWeight;
-  /// 조회수 반영 방식
+  /// View count mode
   final LoopViewCountMode viewCountMode;
 
   static const _keyFav = 'loop_fav_w';

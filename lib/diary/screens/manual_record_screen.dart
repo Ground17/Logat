@@ -180,7 +180,7 @@ class _ManualRecordScreenState extends ConsumerState<ManualRecordScreen> {
                 ),
                 children: [
                   TextSpan(
-                    text: '설정',
+                    text: 'Settings',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.primary,
                       decoration: TextDecoration.underline,
@@ -194,7 +194,7 @@ class _ManualRecordScreenState extends ConsumerState<ManualRecordScreen> {
                           ),
                   ),
                   const TextSpan(
-                      text: ' 내 사진 indexing으로 편하게 기기 내 사진/동영상을 관리할 수 있습니다'),
+                      text: ' photo indexing to easily manage photos and videos on your device'),
                 ],
               ),
             ),

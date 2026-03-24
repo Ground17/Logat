@@ -71,7 +71,7 @@ void callbackDispatcher() {
         }
       }
 
-      // 4. Compute N*100일 milestones
+      // 4. Compute N×100 day milestones
       List<HundredDaysMilestone> hundredDaysMilestones = [];
       if (settings.hundredDays.enabled) {
         final db = AppDatabase();

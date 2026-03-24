@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'package:intl/intl.dart';
+
 import '../models/recommendation_settings.dart';
 import '../providers/diary_providers.dart';
 import 'diary_notification_settings_screen.dart';
@@ -27,6 +29,7 @@ class _DiarySettingsScreenState extends ConsumerState<DiarySettingsScreen> {
         .requestPermissionAndIndex();
     ref.invalidate(permissionStateProvider);
     ref.invalidate(indexedAssetCountProvider);
+    ref.invalidate(lastIndexingDateProvider);
     ref.invalidate(dailyStatsProvider);
     ref.invalidate(diaryCandidatesProvider);
     ref.invalidate(locationClustersProvider);
@@ -41,17 +44,18 @@ class _DiarySettingsScreenState extends ConsumerState<DiarySettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(recommendationSettingsProvider);
     final indexing = ref.watch(indexingControllerProvider);
+    final lastIndexedDate = ref.watch(lastIndexingDateProvider).valueOrNull;
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Diary Settings')),
       body: ListView(
         children: [
-          // ── 사진 인덱싱 섹션 ───────────────────────────────────────────
-          _SectionHeader(title: '사진 인덱싱'),
+          // ── Photo indexing section ────────────────────────────────────
+          _SectionHeader(title: 'Photo Indexing'),
           SwitchListTile(
-            title: const Text('백그라운드 자동 인덱싱'),
-            subtitle: const Text('하루에 한 번 자동으로 사진을 인덱싱합니다'),
+            title: const Text('Auto Background Indexing'),
+            subtitle: const Text('Automatically indexes photos once a day'),
             value: settings.backgroundIndexingEnabled,
             onChanged: (v) {
               _update(settings.copyWith(backgroundIndexingEnabled: v));
@@ -79,7 +83,7 @@ class _DiarySettingsScreenState extends ConsumerState<DiarySettingsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    indexing.message ?? '인덱싱 중...',
+                    indexing.message ?? 'Indexing...',
                     style: textTheme.bodySmall,
                   ),
                 ],
@@ -87,14 +91,18 @@ class _DiarySettingsScreenState extends ConsumerState<DiarySettingsScreen> {
             )
           else
             ListTile(
-              title: const Text('지금 인덱싱'),
-              subtitle: const Text('사진 라이브러리를 지금 바로 인덱싱합니다'),
+              title: const Text('Index Now'),
+              subtitle: Text(
+                lastIndexedDate != null
+                    ? 'Last indexed: ${DateFormat('yyyy-MM-dd HH:mm').format(lastIndexedDate.toLocal())}'
+                    : 'Index your photo library now',
+              ),
               trailing: const Icon(Icons.bolt_outlined),
               onTap: _runIndex,
             ),
           const Divider(),
 
-          // ── AI 추천 섹션 ─────────────────────────────────────────────
+          // ── AI recommendation section ────────────────────────────────
           _SectionHeader(title: 'AI Diary Recommendations'),
           SwitchListTile(
             title: const Text('Enable AI Recommendations'),
@@ -147,11 +155,11 @@ class _DiarySettingsScreenState extends ConsumerState<DiarySettingsScreen> {
 
           const Divider(),
 
-          // ── 탭 순서 섹션 ─────────────────────────────────────────────
-          _SectionHeader(title: '탭 순서'),
+          // ── Tab order section ──────────────────────────────────────────
+          _SectionHeader(title: 'Tab Order'),
           ListTile(
-            title: const Text('탭 순서 설정'),
-            subtitle: const Text('하단 네비게이션 탭의 순서를 변경합니다'),
+            title: const Text('Tab Order Settings'),
+            subtitle: const Text('Rearrange the bottom navigation tabs'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 14),
             onTap: () => Navigator.push(
               context,
@@ -162,12 +170,12 @@ class _DiarySettingsScreenState extends ConsumerState<DiarySettingsScreen> {
 
           const Divider(),
 
-          // ── Loop 알고리즘 섹션 ────────────────────────────────────────
-          _SectionHeader(title: 'Loop 알고리즘'),
+          // ── Loop algorithm section ─────────────────────────────────────
+          _SectionHeader(title: 'Loop Algorithm'),
           ListTile(
-            title: const Text('Loop 노출 설정'),
+            title: const Text('Loop Display Settings'),
             subtitle: const Text(
-                '즐겨찾기, N년 전 오늘, 최근 게시물 가중치 및 조회수 반영 방식'),
+                'Weights for favorites, on this day, recent posts, and view count mode'),
             trailing: const Icon(Icons.arrow_forward_ios, size: 14),
             onTap: () => Navigator.push(
               context,

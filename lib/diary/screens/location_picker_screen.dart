@@ -23,11 +23,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('위치 선택'),
+        title: const Text('Select Location'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, _selected),
-            child: const Text('확인'),
+            child: const Text('Done'),
           ),
         ],
       ),

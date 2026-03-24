@@ -33,7 +33,7 @@ class _RadiusPickerScreenState extends State<RadiusPickerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('위치 반경 설정'),
+        title: const Text('Set Location Radius'),
         actions: [
           TextButton(
             onPressed: () {
@@ -46,7 +46,7 @@ class _RadiusPickerScreenState extends State<RadiusPickerScreen> {
               );
               Navigator.pop(context, filter);
             },
-            child: const Text('확인'),
+            child: const Text('Done'),
           ),
         ],
       ),
@@ -85,7 +85,7 @@ class _RadiusPickerScreenState extends State<RadiusPickerScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('반경: ${_radiusKm.toStringAsFixed(1)} km'),
+                    Text('Radius: ${_radiusKm.toStringAsFixed(1)} km'),
                     Slider(
                       value: _radiusKm,
                       min: 1,
@@ -95,7 +95,7 @@ class _RadiusPickerScreenState extends State<RadiusPickerScreen> {
                       onChanged: (v) => setState(() => _radiusKm = v),
                     ),
                     Text(
-                      '지도를 탭해서 중심 위치를 선택하세요',
+                      'Tap the map to set the center location',
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
                     const SizedBox(height: 4),

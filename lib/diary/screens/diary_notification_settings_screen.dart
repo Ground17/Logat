@@ -49,7 +49,7 @@ class _DiaryNotificationSettingsScreenState
   Future<void> _saveHd(HundredDaysNotifSettings s) async {
     setState(() => _hd = s);
     await s.save();
-    // 변경 시 milestone 재계산 후 즉시 재스케줄
+    // Recompute milestones and reschedule immediately on change
     List<HundredDaysMilestone> milestones = [];
     if (s.enabled) {
       final db = AppDatabase();
@@ -130,7 +130,7 @@ class _DiaryNotificationSettingsScreenState
                 _SectionHeader(title: 'On This Day'),
                 _buildOtdSection(),
                 const Divider(),
-                _SectionHeader(title: 'N×100일 기념일'),
+                _SectionHeader(title: 'N×100 Day Milestones'),
                 _buildHundredDaysSection(),
                 const Divider(),
                 _SectionHeader(title: 'Periodic Reminders'),
@@ -223,18 +223,18 @@ class _DiaryNotificationSettingsScreenState
     );
   }
 
-  // ── N*100일 기념일 section ────────────────────────────────────────────────
+  // ── N×100 Day Milestones section ──────────────────────────────────────────
 
   Widget _buildHundredDaysSection() {
     return Column(
       children: [
         SwitchListTile(
-          title: const Text('N×100일 기념일'),
-          subtitle: const Text('100일, 200일, 300일... 기념일에 알림'),
+          title: const Text('N×100 Day Milestones'),
+          subtitle: const Text('Notify on 100-day, 200-day, 300-day... anniversaries'),
           value: _hd.enabled,
           onChanged: (v) => _saveHd(_hd.copyWith(enabled: v)),
         ),
-        if (_hd.enabled)
+        if (_hd.enabled) ...[
           ListTile(
             leading: const Icon(Icons.access_time),
             title: const Text('Time'),
@@ -251,6 +251,38 @@ class _DiaryNotificationSettingsScreenState
               }
             },
           ),
+          SwitchListTile(
+            title: const Text('AI-generated content'),
+            subtitle: const Text('Use AI to write notification text'),
+            value: _hd.useAi,
+            onChanged: (v) => _saveHd(_hd.copyWith(useAi: v)),
+          ),
+          if (_hd.useAi) ...[
+            ListTile(
+              title: const Text('Format'),
+              subtitle: Text(_hd.aiFormat.displayName),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _pickAiFormat(
+                current: _hd.aiFormat,
+                onChanged: (f) => _saveHd(_hd.copyWith(aiFormat: f)),
+              ),
+            ),
+            ListTile(
+              title: const Text('Style Instruction'),
+              subtitle: Text(
+                _hd.aiPromptStyle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.edit_outlined),
+              onTap: () => _editText(
+                label: 'Style Instruction',
+                initial: _hd.aiPromptStyle,
+                onSave: (v) => _saveHd(_hd.copyWith(aiPromptStyle: v)),
+              ),
+            ),
+          ],
+        ],
       ],
     );
   }

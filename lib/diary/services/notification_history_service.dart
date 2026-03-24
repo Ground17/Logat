@@ -20,13 +20,13 @@ class NotificationHistoryService {
 
   Future<void> addEntry(NotificationHistoryEntry entry) async {
     final all = await loadAll();
-    // 동일 ID 중복 방지
+    // Prevent duplicate IDs
     all.removeWhere((e) => e.id == entry.id);
     all.insert(0, entry);
     await _save(all.take(_maxEntries).toList());
   }
 
-  /// 재스케줄 시 미발송 기존 엔트리 교체 (중복 방지)
+  /// Replace undelivered existing entries on reschedule (prevents duplicates)
   Future<void> replaceEntriesOfType(String type) async {
     final all = await loadAll();
     all.removeWhere((e) => e.type == type && !e.delivered);

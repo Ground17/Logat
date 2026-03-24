@@ -45,17 +45,17 @@ class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('알림 내역'),
+          title: const Text('Notification History'),
           bottom: const TabBar(
             tabs: [
-              Tab(text: '예정'),
-              Tab(text: '기록'),
+              Tab(text: 'Upcoming'),
+              Tab(text: 'History'),
             ],
           ),
           actions: [
             IconButton(
               icon: const Icon(Icons.settings_outlined),
-              tooltip: '알림 설정',
+              tooltip: 'Notification Settings',
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -77,12 +77,12 @@ class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
               children: [
                 _EntryList(
                   entries: upcoming,
-                  emptyMessage: '예정된 알림이 없습니다',
+                  emptyMessage: 'No upcoming notifications',
                   onTap: null,
                 ),
                 _EntryList(
                   entries: recent,
-                  emptyMessage: '알림 기록이 없습니다',
+                  emptyMessage: 'No notification history',
                   onTap: _onTapEntry,
                 ),
               ],
@@ -184,7 +184,7 @@ class _EntryList extends StatelessWidget {
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
     if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-      return '오늘';
+      return 'Today';
     }
     if (dt.year == now.year) {
       return DateFormat('M/d').format(dt);

@@ -13,12 +13,12 @@ class NotificationHistoryEntry {
   });
 
   final String id;           // "${type}_${notifId}_${scheduledMs}"
-  final int notificationId;  // flutter_local_notifications ID (pending 교차 검증용)
+  final int notificationId;  // flutter_local_notifications ID (for cross-checking pending notifications)
   final String type;         // 'onThisDay' | 'hundredDays' | 'periodic'
   final String title;
   final String body;
   final DateTime scheduledAt;
-  final String? payload;     // raw JSON string (네비게이션용)
+  final String? payload;     // raw JSON string (for navigation)
   final bool delivered;
 
   NotificationHistoryEntry copyWith({
