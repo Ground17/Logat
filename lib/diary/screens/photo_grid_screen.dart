@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event_summary.dart';
 import '../providers/diary_providers.dart';
+import '../widgets/indexing_prompt_view.dart';
 import 'event_detail_screen.dart';
 
 class PhotoGridScreen extends ConsumerStatefulWidget {
@@ -71,6 +72,11 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final indexedCount = ref.watch(indexedAssetCountProvider);
+    if ((indexedCount.valueOrNull ?? 0) == 0) {
+      return const IndexingPromptView();
+    }
+
     final eventsAsync = ref.watch(filteredJournalEventsProvider);
     final columns = ref.watch(gridColumnCountProvider);
 

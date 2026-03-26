@@ -252,10 +252,11 @@ class _MonthlyRecapScreenState extends ConsumerState<MonthlyRecapScreen> {
     final monthName = DateFormat('MMMM yyyy')
         .format(DateTime(_year, _month));
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           monthName,
+          textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -263,6 +264,7 @@ class _MonthlyRecapScreenState extends ConsumerState<MonthlyRecapScreen> {
         const SizedBox(height: 4),
         Text(
           '$totalPhotos photos · $activeDays active ${activeDays == 1 ? 'day' : 'days'}',
+          textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),

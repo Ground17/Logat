@@ -45,14 +45,21 @@ class _ManualRecordScreenState extends ConsumerState<ManualRecordScreen> {
     }
   }
 
+  // Strip extension for comparison (handles HEIC→JPG conversion by iOS share sheet)
+  static String _stem(String name) {
+    final i = name.lastIndexOf('.');
+    return i > 0 ? name.substring(0, i) : name;
+  }
+
   Future<void> _matchSharedFiles(List<String> paths) async {
     setState(() => _matchingShared = true);
     try {
       final permission = await PhotoManager.requestPermissionExtend();
       if (!permission.isAuth) return;
 
-      final sharedNames =
-          paths.map((p) => p.split('/').last.toLowerCase()).toSet();
+      // Compare by stem (filename without extension) to handle HEIC→JPG mismatch
+      final sharedStems =
+          paths.map((p) => _stem(p.split('/').last.toLowerCase())).toSet();
 
       final albums = await PhotoManager.getAssetPathList(
         type: RequestType.common,
@@ -68,8 +75,8 @@ class _ManualRecordScreenState extends ConsumerState<ManualRecordScreen> {
 
       final matched = <String>[];
       for (final asset in assets) {
-        final title = (await asset.titleAsync).toLowerCase();
-        if (sharedNames.contains(title)) {
+        final stem = _stem((await asset.titleAsync).toLowerCase());
+        if (sharedStems.contains(stem)) {
           matched.add(asset.id);
           if (matched.length == paths.length) break;
         }

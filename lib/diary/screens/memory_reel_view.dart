@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import '../models/event_summary.dart';
 import '../providers/diary_providers.dart';
+import '../widgets/indexing_prompt_view.dart';
 import 'event_detail_screen.dart';
 // userLocationProvider, distanceKm, formatDistanceLabel are imported via diary_providers
 
@@ -18,6 +19,11 @@ class MemoryLoopView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final indexedCount = ref.watch(indexedAssetCountProvider);
+    if ((indexedCount.valueOrNull ?? 0) == 0) {
+      return const IndexingPromptView();
+    }
+
     final itemsAsync = ref.watch(loopItemsProvider);
     return itemsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -331,28 +337,16 @@ class _LoopPageState extends ConsumerState<_LoopPage>
           ),
         ),
 
-        // 3. Video progress bar — above the gradient, below the sidebar
+        // 3. Video progress bar — YouTube Shorts style at bottom
         ValueListenableBuilder<VideoPlayerController?>(
           valueListenable: _videoCtrlNotifier,
           builder: (ctx, ctrl, _) {
             if (ctrl == null) return const SizedBox.shrink();
             return Positioned(
-              bottom: 120,
-              left: 16,
-              right: 80,
-              child: IgnorePointer(
-                ignoring: false,
-                child: VideoProgressIndicator(
-                  ctrl,
-                  allowScrubbing: true,
-                  padding: EdgeInsets.zero,
-                  colors: const VideoProgressColors(
-                    playedColor: Colors.white,
-                    bufferedColor: Colors.white38,
-                    backgroundColor: Colors.white24,
-                  ),
-                ),
-              ),
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _ShortsSeekBar(controller: ctrl),
             );
           },
         ),
@@ -743,4 +737,109 @@ class EventAddressRow extends ConsumerWidget {
       ],
     );
   }
+}
+
+// ─── YouTube-Shorts-style seek bar ────────────────────────────────────────────
+
+class _ShortsSeekBar extends StatefulWidget {
+  const _ShortsSeekBar({required this.controller});
+  final VideoPlayerController controller;
+
+  @override
+  State<_ShortsSeekBar> createState() => _ShortsSeekBarState();
+}
+
+class _ShortsSeekBarState extends State<_ShortsSeekBar> {
+  static const double _thinH = 3.0;
+  static const double _thickH = 16.0;
+  static const double _hitH = 40.0; // invisible touch area height
+
+  bool _dragging = false;
+  double _dragFraction = 0.0; // 0..1, used only while dragging
+
+  double get _fraction {
+    if (_dragging) return _dragFraction;
+    final dur = widget.controller.value.duration.inMicroseconds;
+    if (dur == 0) return 0;
+    return (widget.controller.value.position.inMicroseconds / dur).clamp(0.0, 1.0);
+  }
+
+  void _seekTo(double fraction, double width) {
+    final dur = widget.controller.value.duration;
+    widget.controller.seekTo(dur * fraction.clamp(0.0, 1.0));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<VideoPlayerValue>(
+      valueListenable: widget.controller,
+      builder: (ctx, value, _) {
+        final barH = _dragging ? _thickH : _thinH;
+        final fraction = _fraction;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragStart: (d) {
+            final w = context.size?.width ?? 1;
+            setState(() {
+              _dragging = true;
+              _dragFraction = (d.localPosition.dx / w).clamp(0.0, 1.0);
+            });
+          },
+          onHorizontalDragUpdate: (d) {
+            final w = context.size?.width ?? 1;
+            setState(() {
+              _dragFraction = (d.localPosition.dx / w).clamp(0.0, 1.0);
+            });
+          },
+          onHorizontalDragEnd: (_) {
+            _seekTo(_dragFraction, context.size?.width ?? 1);
+            setState(() => _dragging = false);
+          },
+          onTapDown: (d) {
+            final w = context.size?.width ?? 1;
+            final f = (d.localPosition.dx / w).clamp(0.0, 1.0);
+            _seekTo(f, w);
+          },
+          child: SizedBox(
+            height: _hitH,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                height: barH,
+                child: CustomPaint(
+                  painter: _SeekBarPainter(fraction: fraction),
+                  size: Size(double.infinity, barH),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SeekBarPainter extends CustomPainter {
+  const _SeekBarPainter({required this.fraction});
+  final double fraction;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bg = Paint()..color = Colors.white24;
+    final played = Paint()..color = Colors.white;
+    final r = size.height / 2;
+    final rect = RRect.fromLTRBR(0, 0, size.width, size.height, Radius.circular(r));
+    canvas.drawRRect(rect, bg);
+    if (fraction > 0) {
+      canvas.drawRRect(
+        RRect.fromLTRBR(0, 0, size.width * fraction, size.height, Radius.circular(r)),
+        played,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SeekBarPainter old) => old.fraction != fraction;
 }

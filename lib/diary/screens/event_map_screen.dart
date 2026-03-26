@@ -11,6 +11,7 @@ import 'package:photo_manager/photo_manager.dart' hide LatLng;
 import '../models/event_summary.dart';
 import '../providers/diary_providers.dart';
 import '../services/geocoding_service.dart';
+import '../widgets/indexing_prompt_view.dart';
 import 'event_detail_screen.dart';
 
 class EventMapScreen extends ConsumerStatefulWidget {
@@ -94,6 +95,11 @@ class _EventMapScreenState extends ConsumerState<EventMapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final indexedCount = ref.watch(indexedAssetCountProvider);
+    if ((indexedCount.valueOrNull ?? 0) == 0) {
+      return const Scaffold(body: IndexingPromptView());
+    }
+
     final eventsAsync = ref.watch(filteredJournalEventsProvider);
 
     return Scaffold(

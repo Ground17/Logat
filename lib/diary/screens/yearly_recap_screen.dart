@@ -247,10 +247,11 @@ class _YearlyRecapScreenState extends ConsumerState<YearlyRecapScreen> {
 
   Widget _buildHeader(int totalPhotos, int activeDays, int activeMonths) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           '$_year',
+          textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -258,6 +259,7 @@ class _YearlyRecapScreenState extends ConsumerState<YearlyRecapScreen> {
         const SizedBox(height: 4),
         Text(
           '$totalPhotos photos · $activeDays active days · $activeMonths months',
+          textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),

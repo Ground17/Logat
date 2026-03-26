@@ -10,6 +10,7 @@ import '../models/location_filter.dart';
 import '../models/recommendation_settings.dart';
 import '../providers/diary_providers.dart';
 import '../widgets/heatmap_widget.dart';
+import '../widgets/indexing_prompt_view.dart';
 import 'event_detail_screen.dart';
 import 'manual_record_screen.dart';
 import 'monthly_recap_screen.dart';
@@ -21,6 +22,11 @@ class ActivityScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final indexedCount = ref.watch(indexedAssetCountProvider);
+    if ((indexedCount.valueOrNull ?? 0) == 0) {
+      return const IndexingPromptView();
+    }
+
     final recSettings = ref.watch(recommendationSettingsProvider);
     final onThisDay = ref.watch(onThisDayProvider);
     final yearlyStats = ref.watch(yearlyDailyStatsProvider);
