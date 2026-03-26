@@ -239,7 +239,7 @@ class _GridTileState extends State<_GridTile> {
             const Positioned(
               top: 3,
               right: 3,
-              child: Icon(Icons.favorite, color: Colors.red, size: 12),
+              child: Icon(Icons.favorite, color: Colors.red, size: 16),
             ),
           if (widget.event.color != null)
             Positioned(

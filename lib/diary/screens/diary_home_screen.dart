@@ -43,7 +43,11 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
       if (files.isNotEmpty && mounted) {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const ManualRecordScreen()),
+          MaterialPageRoute(
+            builder: (_) => ManualRecordScreen(
+              sharedFilePaths: files.map((f) => f.path).toList(),
+            ),
+          ),
         );
       }
     });
@@ -54,7 +58,11 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
           if (mounted) {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const ManualRecordScreen()),
+              MaterialPageRoute(
+                builder: (_) => ManualRecordScreen(
+                  sharedFilePaths: files.map((f) => f.path).toList(),
+                ),
+              ),
             );
           }
         });
@@ -81,32 +89,43 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
     } catch (_) {}
   }
 
+  Widget _folderFab() => FloatingActionButton.small(
+        heroTag: 'openFolders',
+        tooltip: 'Manage Folders',
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const FolderBrowserScreen()),
+        ),
+        child: const Icon(Icons.folder_outlined),
+      );
+
   Widget? _buildFab(BuildContext context, int logicalTab) {
     switch (logicalTab) {
-      case 0: // Loop — folder shortcut
-        return FloatingActionButton.small(
-          heroTag: 'openFolders',
-          tooltip: 'Manage Folders',
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const FolderBrowserScreen()),
-          ),
-          child: const Icon(Icons.folder_outlined),
-        );
+      case 0: // Loop — folder shortcut only
+        return _folderFab();
       case 1: // List
-      case 2: // Grid
-        return FloatingActionButton(
-          heroTag: 'addDiaryEntry',
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ManualRecordScreen()),
-          ),
-          child: const Icon(Icons.add),
+      case 2: // Tile
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _folderFab(),
+            const SizedBox(height: 8),
+            FloatingActionButton(
+              heroTag: 'addDiaryEntry',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ManualRecordScreen()),
+              ),
+              child: const Icon(Icons.add),
+            ),
+          ],
         );
       case 4: // Map
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _folderFab(),
+            const SizedBox(height: 8),
             FloatingActionButton.small(
               heroTag: 'mapMyLocation',
               onPressed: _goToMyLocation,
@@ -294,11 +313,10 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
                   ),
                   const Spacer(),
                   TextButton(
-                    onPressed: () {
+                    onPressed: () async {
                       _searchCtrl.clear();
                       _applyFilter(const DiaryFilter());
-                      ref.read(dateRangeFilterProvider.notifier).update(
-                          _defaultDateRange());
+                      await ref.read(dateRangeFilterProvider.notifier).resetToDefault();
                       ref.read(locationFilterProvider.notifier).state = null;
                       ref.read(selectedFolderFilterProvider.notifier).state =
                           null;
@@ -369,15 +387,7 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
               ),
               const Divider(),
               // Date range
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.date_range_outlined),
-                title: Text(
-                  '${formatter.format(dateRange.start)} ~ ${formatter.format(dateRange.end.subtract(const Duration(days: 1)))}',
-                ),
-                subtitle: const Text('Date range'),
-                onTap: () => _pickDateRange(context, ref, dateRange),
-              ),
+              _DateRangeSection(dateRange: dateRange),
               // Location filter
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -428,19 +438,70 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
     );
   }
 
-  DateRangeFilter _defaultDateRange() {
-    final now = DateTime.now().toUtc();
-    return DateRangeFilter(
-      start: DateTime.utc(now.year, now.month - 1, now.day),
-      end: DateTime.utc(now.year, now.month, now.day + 1),
-    );
+}
+
+// ─── Date range section widget ─────────────────────────────────────────────
+
+class _DateRangeSection extends ConsumerStatefulWidget {
+  const _DateRangeSection({required this.dateRange});
+  final DateRangeFilter dateRange;
+
+  @override
+  ConsumerState<_DateRangeSection> createState() => _DateRangeSectionState();
+}
+
+class _DateRangeSectionState extends ConsumerState<_DateRangeSection> {
+  late bool _isAllTime;
+  late bool _isRelative;
+  late int _amount;
+  late RelativeDateUnit _unit;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncFromWidget(widget.dateRange);
   }
 
-  Future<void> _pickDateRange(
-    BuildContext context,
-    WidgetRef ref,
-    DateRangeFilter current,
-  ) async {
+  @override
+  void didUpdateWidget(_DateRangeSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dateRange != widget.dateRange) {
+      _syncFromWidget(widget.dateRange);
+    }
+  }
+
+  void _syncFromWidget(DateRangeFilter dr) {
+    _isAllTime = dr.isAllTime;
+    _isRelative = dr.isRelative;
+    _amount = dr.relativeAmount;
+    _unit = dr.relativeUnit;
+  }
+
+  void _switchToAllTime() {
+    setState(() {
+      _isAllTime = true;
+      _isRelative = false;
+    });
+    ref.read(dateRangeFilterProvider.notifier).update(DateRangeFilter.allTime());
+    _invalidate();
+  }
+
+  void _applyRelative({int? amount, RelativeDateUnit? unit}) {
+    final a = amount ?? _amount;
+    final u = unit ?? _unit;
+    setState(() {
+      _isAllTime = false;
+      _isRelative = true;
+      _amount = a;
+      _unit = u;
+    });
+    final filter = DateRangeFilter.relative(a, u);
+    ref.read(dateRangeFilterProvider.notifier).update(filter);
+    _invalidate();
+  }
+
+  void _switchToAbsolute() async {
+    final current = ref.read(dateRangeFilterProvider);
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2010),
@@ -450,16 +511,231 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
         end: current.end.subtract(const Duration(days: 1)).toLocal(),
       ),
     );
-    if (picked == null) return;
-    ref.read(dateRangeFilterProvider.notifier).update(DateRangeFilter(
-      start:
-          DateTime.utc(picked.start.year, picked.start.month, picked.start.day),
-      end: DateTime.utc(picked.end.year, picked.end.month, picked.end.day + 1),
-    ));
+    if (picked == null || !mounted) return;
+    setState(() {
+      _isAllTime = false;
+      _isRelative = false;
+    });
+    final filter = DateRangeFilter.absolute(
+      DateTime.utc(picked.start.year, picked.start.month, picked.start.day),
+      DateTime.utc(picked.end.year, picked.end.month, picked.end.day + 1),
+    );
+    ref.read(dateRangeFilterProvider.notifier).update(filter);
+    _invalidate();
+  }
+
+  void _invalidate() {
     ref.invalidate(dailyStatsProvider);
     ref.invalidate(mapEventsProvider);
     ref.invalidate(filteredJournalEventsProvider);
     ref.invalidate(tagSummariesProvider);
+  }
+
+  Future<void> _saveAsDefault() async {
+    final filter = DateRangeFilter.relative(_amount, _unit);
+    await filter.saveAsDefault();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Default date range saved as ${_unit.labelFor(_amount)}.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickAmount() async {
+    final amounts = [
+      for (int i = 1; i <= 30; i++) i,
+      45, 60, 90, 180, 365,
+    ];
+    await showModalBottomSheet(
+      context: context,
+      builder: (ctx) => ListView.builder(
+        itemCount: amounts.length,
+        itemBuilder: (_, i) => ListTile(
+          title: Text(_unit.labelFor(amounts[i])),
+          selected: amounts[i] == _amount,
+          onTap: () {
+            Navigator.pop(ctx);
+            _applyRelative(amount: amounts[i]);
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = DateFormat('yyyy-MM-dd');
+    final dateRange = ref.watch(dateRangeFilterProvider);
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.date_range_outlined, size: 20),
+            const SizedBox(width: 8),
+            const Text('Date range',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            const Spacer(),
+            // Relative / Absolute / All time segmented control
+            _ModeChip(
+              label: 'All Time',
+              selected: _isAllTime,
+              onTap: _switchToAllTime,
+            ),
+            const SizedBox(width: 6),
+            _ModeChip(
+              label: 'Relative',
+              selected: !_isAllTime && _isRelative,
+              onTap: () {
+                if (_isAllTime || !_isRelative) _applyRelative();
+              },
+            ),
+            const SizedBox(width: 6),
+            _ModeChip(
+              label: 'Absolute',
+              selected: !_isAllTime && !_isRelative,
+              onTap: _switchToAbsolute,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_isAllTime) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              'All time',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ] else if (_isRelative) ...[
+          Row(
+            children: [
+              // Amount selector
+              GestureDetector(
+                onTap: _pickAmount,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: primaryColor.withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    '$_amount',
+                    style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Unit selector
+              ...RelativeDateUnit.values.map((u) => Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _ModeChip(
+                      label: u.label,
+                      selected: _unit == u,
+                      onTap: () => _applyRelative(unit: u),
+                    ),
+                  )),
+              const Spacer(),
+              // Save as default
+              TextButton(
+                style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero),
+                onPressed: _saveAsDefault,
+                child: const Text('Save as default',
+                    style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${formatter.format(dateRange.start)} ~ ${formatter.format(dateRange.end.subtract(const Duration(days: 1)))}',
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12),
+          ),
+        ] else ...[
+          GestureDetector(
+            onTap: _switchToAbsolute,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border:
+                    Border.all(color: primaryColor.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${formatter.format(dateRange.start)}  ~  ${formatter.format(dateRange.end.subtract(const Duration(days: 1)))}',
+                    style: TextStyle(color: primaryColor, fontSize: 13),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(Icons.edit_calendar_outlined,
+                      size: 16, color: primaryColor),
+                ],
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+}
+
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected ? color : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: selected ? 1 : 0.4)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : color,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
   }
 }
 

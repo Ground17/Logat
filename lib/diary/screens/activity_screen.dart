@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_manager/photo_manager.dart';
 
-import '../models/date_range_filter.dart';
 import '../models/event_summary.dart';
 import '../models/location_filter.dart';
 import '../models/recommendation_settings.dart';
@@ -202,43 +201,11 @@ class _TopLocationsCard extends ConsumerStatefulWidget {
 }
 
 class _TopLocationsCardState extends ConsumerState<_TopLocationsCard> {
-  late DateRangeFilter _range;
-
-  @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now().toUtc();
-    _range = DateRangeFilter(
-      start: DateTime.utc(now.year - 1, now.month, now.day),
-      end: DateTime.utc(now.year, now.month, now.day + 1),
-    );
-  }
-
-  Future<void> _pickRange() async {
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2010),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
-      initialDateRange: DateTimeRange(
-        start: _range.start.toLocal(),
-        end: _range.end.subtract(const Duration(days: 1)).toLocal(),
-      ),
-    );
-    if (picked == null) return;
-    setState(() {
-      _range = DateRangeFilter(
-        start: DateTime.utc(
-            picked.start.year, picked.start.month, picked.start.day),
-        end:
-            DateTime.utc(picked.end.year, picked.end.month, picked.end.day + 1),
-      );
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    final range = ref.watch(dateRangeFilterProvider);
     final enrichedClusters =
-        ref.watch(enrichedLocationClustersInRangeProvider(_range));
+        ref.watch(enrichedLocationClustersInRangeProvider(range));
     final formatter = DateFormat('yyyy.M.d');
 
     return Card(
@@ -255,12 +222,13 @@ class _TopLocationsCardState extends ConsumerState<_TopLocationsCard> {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: _pickRange,
-                  icon: const Icon(Icons.date_range, size: 16),
-                  label: Text(
-                    '${formatter.format(_range.start)}~${formatter.format(_range.end.subtract(const Duration(days: 1)))}',
-                    style: const TextStyle(fontSize: 12),
+                Text(
+                  range.isAllTime
+                      ? 'All time'
+                      : '${formatter.format(range.start)} ~ ${formatter.format(range.end.subtract(const Duration(days: 1)))}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],

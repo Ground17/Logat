@@ -100,6 +100,7 @@ class _DiaryNotificationSettingsScreenState
         PeriodicNotifRule(
           id: i,
           label: source[i].label,
+          subtitle: source[i].subtitle,
           enabled: source[i].enabled,
           scheduleType: source[i].scheduleType,
           hour: source[i].hour,
@@ -157,6 +158,7 @@ class _DiaryNotificationSettingsScreenState
           ListTile(
             leading: const Icon(Icons.access_time),
             title: const Text('Time'),
+            subtitle: const Text('Notifies only on days with past memories'),
             trailing: Text(
               '${_otd.hour.toString().padLeft(2, '0')}:${_otd.minute.toString().padLeft(2, '0')}',
             ),
@@ -170,22 +172,6 @@ class _DiaryNotificationSettingsScreenState
                     _otd.copyWith(hour: picked.hour, minute: picked.minute));
               }
             },
-          ),
-          ListTile(
-            leading: const Icon(Icons.repeat),
-            title: const Text('Schedule'),
-            trailing: Text(_scheduleLabel(
-                _otd.scheduleType, _otd.intervalDays, _otd.weekdays)),
-            onTap: () => _showSchedulePicker(
-              scheduleType: _otd.scheduleType,
-              intervalDays: _otd.intervalDays,
-              weekdays: _otd.weekdays,
-              onChanged: (type, interval, days) => _saveOtd(_otd.copyWith(
-                scheduleType: type,
-                intervalDays: interval,
-                weekdays: days,
-              )),
-            ),
           ),
           SwitchListTile(
             title: const Text('AI-generated content'),
@@ -366,26 +352,6 @@ class _DiaryNotificationSettingsScreenState
         final sorted = weekdays.toList()..sort();
         return sorted.map((d) => dayNames[d - 1]).join(', ');
     }
-  }
-
-  Future<void> _showSchedulePicker({
-    required NotificationScheduleType scheduleType,
-    required int intervalDays,
-    required Set<int> weekdays,
-    required void Function(
-            NotificationScheduleType, int, Set<int>)
-        onChanged,
-  }) async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _SchedulePickerSheet(
-        scheduleType: scheduleType,
-        intervalDays: intervalDays,
-        weekdays: weekdays,
-        onChanged: onChanged,
-      ),
-    );
   }
 
   Future<void> _showRuleEditSheet(int idx, PeriodicNotifRule rule) async {
@@ -631,17 +597,20 @@ class _PeriodicRuleEditSheet extends StatefulWidget {
 class _PeriodicRuleEditSheetState extends State<_PeriodicRuleEditSheet> {
   late PeriodicNotifRule _rule;
   late TextEditingController _labelCtrl;
+  late TextEditingController _subtitleCtrl;
 
   @override
   void initState() {
     super.initState();
     _rule = widget.rule;
     _labelCtrl = TextEditingController(text: _rule.label);
+    _subtitleCtrl = TextEditingController(text: _rule.subtitle);
   }
 
   @override
   void dispose() {
     _labelCtrl.dispose();
+    _subtitleCtrl.dispose();
     super.dispose();
   }
 
@@ -676,6 +645,18 @@ class _PeriodicRuleEditSheetState extends State<_PeriodicRuleEditSheet> {
                 ),
                 onChanged: (v) =>
                     setState(() => _rule = _rule.copyWith(label: v)),
+              ),
+              const SizedBox(height: 12),
+              // Subtitle
+              TextField(
+                controller: _subtitleCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Subtitle (optional)',
+                  hintText: 'Shown below the title in the notification',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (v) =>
+                    setState(() => _rule = _rule.copyWith(subtitle: v)),
               ),
               const SizedBox(height: 16),
 
@@ -743,7 +724,8 @@ class _PeriodicRuleEditSheetState extends State<_PeriodicRuleEditSheet> {
                       final saved = _rule.copyWith(
                           label: _labelCtrl.text.trim().isEmpty
                               ? 'Reminder'
-                              : _labelCtrl.text.trim());
+                              : _labelCtrl.text.trim(),
+                          subtitle: _subtitleCtrl.text.trim());
                       widget.onSave(saved);
                       Navigator.pop(context);
                     },

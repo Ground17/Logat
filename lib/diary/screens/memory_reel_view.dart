@@ -24,11 +24,27 @@ class MemoryLoopView extends ConsumerWidget {
       error: (e, _) => Center(child: Text('Error: $e')),
       data: (events) {
         if (events.isEmpty) {
-          return const Center(
-            child: Text('No memories yet', style: TextStyle(fontSize: 18)),
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(loopItemsProvider),
+            child: const SingleChildScrollView(
+              physics: AlwaysScrollableScrollPhysics(),
+              child: SizedBox(
+                height: 400,
+                child: Center(
+                  child: Text('No memories yet',
+                      style: TextStyle(fontSize: 18)),
+                ),
+              ),
+            ),
           );
         }
-        return _LoopPageView(events: events);
+        return RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(loopItemsProvider);
+            await ref.read(loopItemsProvider.future);
+          },
+          child: _LoopPageView(events: events),
+        );
       },
     );
   }
@@ -59,7 +75,13 @@ String _daysAgoLabel(DateTime eventDate) {
       .inDays;
   if (days == 0) return 'Today';
   if (days == 1) return 'Yesterday';
-  return '$days days ago';
+  if (days < 7) return '$days days ago';
+  final weeks = (days / 7).floor();
+  if (days < 30) return weeks == 1 ? '1 week ago' : '$weeks weeks ago';
+  final months = (days / 30).floor();
+  if (days < 365) return months == 1 ? '1 month ago' : '$months months ago';
+  final years = (days / 365).floor();
+  return years == 1 ? '1 year ago' : '$years years ago';
 }
 
 // ─── Vertical PageView (event level) ─────────────────────────────────────
@@ -88,6 +110,7 @@ class _LoopPageViewState extends State<_LoopPageView> {
     return PageView.builder(
       scrollDirection: Axis.vertical,
       controller: _pageCtrl,
+      physics: const BouncingScrollPhysics(parent: PageScrollPhysics()),
       itemCount: widget.events.length,
       onPageChanged: (idx) => setState(() => _currentPage = idx),
       itemBuilder: (ctx, i) => _LoopPage(
@@ -122,6 +145,8 @@ class _LoopPageState extends ConsumerState<_LoopPage>
   late final AnimationController _heartCtrl;
   Offset _heartPos = Offset.zero;
   final ValueNotifier<double> _speedNotifier = ValueNotifier(1.0);
+  final ValueNotifier<VideoPlayerController?> _videoCtrlNotifier =
+      ValueNotifier(null);
 
   List<String> get _mediaIds =>
       widget.event.assetIds.where((id) => id != 'manual_no_photo').toList();
@@ -140,6 +165,7 @@ class _LoopPageState extends ConsumerState<_LoopPage>
   void dispose() {
     _heartCtrl.dispose();
     _speedNotifier.dispose();
+    _videoCtrlNotifier.dispose();
     super.dispose();
   }
 
@@ -149,7 +175,7 @@ class _LoopPageState extends ConsumerState<_LoopPage>
     await ref
         .read(appDatabaseProvider)
         .updateEventFavorite(widget.event.eventId, newValue);
-    ref.invalidate(filteredJournalEventsProvider);
+    // Don't invalidate filteredJournalEventsProvider here to avoid page jump
   }
 
   void _handleDoubleTap() {
@@ -173,8 +199,10 @@ class _LoopPageState extends ConsumerState<_LoopPage>
     final event = widget.event;
     final ids = _mediaIds;
     final specialLabel = _specialDayLabel(event.startAt);
-    final dateLabel =
-        '${DateFormat('MMM d, yyyy').format(event.startAt.toLocal())}  ·  ${_daysAgoLabel(event.startAt)}';
+    final dateStr =
+        DateFormat('MMM d, yyyy').format(event.startAt.toLocal());
+    final daysAgo = _daysAgoLabel(event.startAt);
+    final primaryColor = Theme.of(context).colorScheme.primary;
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -193,6 +221,7 @@ class _LoopPageState extends ConsumerState<_LoopPage>
             assetIds: ids,
             isPageActive: widget.isActive,
             speedNotifier: _speedNotifier,
+            videoCtrlNotifier: _videoCtrlNotifier,
             onPageChanged: (i) => setState(() => _mediaPage = i),
           ),
         ),
@@ -234,13 +263,27 @@ class _LoopPageState extends ConsumerState<_LoopPage>
                   ),
                   const SizedBox(height: 6),
                 ],
-                Text(
-                  dateLabel,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                // Date + days ago with color (like List tab)
+                Row(
+                  children: [
+                    Text(
+                      dateStr,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '($daysAgo)',
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
                 if (event.title != null) ...[
                   const SizedBox(height: 4),
@@ -288,19 +331,46 @@ class _LoopPageState extends ConsumerState<_LoopPage>
           ),
         ),
 
-        // 3. Media dot indicators
+        // 3. Video progress bar — above the gradient, below the sidebar
+        ValueListenableBuilder<VideoPlayerController?>(
+          valueListenable: _videoCtrlNotifier,
+          builder: (ctx, ctrl, _) {
+            if (ctrl == null) return const SizedBox.shrink();
+            return Positioned(
+              bottom: 120,
+              left: 16,
+              right: 80,
+              child: IgnorePointer(
+                ignoring: false,
+                child: VideoProgressIndicator(
+                  ctrl,
+                  allowScrubbing: true,
+                  padding: EdgeInsets.zero,
+                  colors: const VideoProgressColors(
+                    playedColor: Colors.white,
+                    bufferedColor: Colors.white38,
+                    backgroundColor: Colors.white24,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+
+        // 4. Media dot indicators — top horizontal
         if (ids.length > 1)
           Positioned(
-            right: 8,
-            bottom: 140,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            top: 12,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(
                 ids.length,
                 (i) => Container(
                   width: 6,
                   height: 6,
-                  margin: const EdgeInsets.symmetric(vertical: 2),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: i == _mediaPage
@@ -312,7 +382,7 @@ class _LoopPageState extends ConsumerState<_LoopPage>
             ),
           ),
 
-        // 4. Right sidebar (favorite, detail)
+        // 5. Right sidebar (favorite, detail)
         Positioned(
           right: 8,
           bottom: 80,
@@ -342,7 +412,7 @@ class _LoopPageState extends ConsumerState<_LoopPage>
           ),
         ),
 
-        // 5. Double-tap heart animation
+        // 6. Double-tap heart animation
         AnimatedBuilder(
           animation: _heartCtrl,
           builder: (ctx, _) {
@@ -378,7 +448,7 @@ class _LoopPageState extends ConsumerState<_LoopPage>
           },
         ),
 
-        // 6. 2× speed indicator
+        // 7. 2× speed indicator
         ValueListenableBuilder<double>(
           valueListenable: _speedNotifier,
           builder: (ctx, speed, _) {
@@ -420,12 +490,14 @@ class _LoopMediaSlider extends StatefulWidget {
     required this.assetIds,
     required this.isPageActive,
     required this.speedNotifier,
+    required this.videoCtrlNotifier,
     required this.onPageChanged,
   });
 
   final List<String> assetIds;
   final bool isPageActive;
   final ValueNotifier<double> speedNotifier;
+  final ValueNotifier<VideoPlayerController?> videoCtrlNotifier;
   final ValueChanged<int> onPageChanged;
 
   @override
@@ -455,6 +527,7 @@ class _LoopMediaSliderState extends State<_LoopMediaSlider> {
         assetId: widget.assetIds[0],
         isActive: widget.isPageActive,
         speedNotifier: widget.speedNotifier,
+        videoCtrlNotifier: widget.videoCtrlNotifier,
       );
     }
     return PageView.builder(
@@ -470,6 +543,7 @@ class _LoopMediaSliderState extends State<_LoopMediaSlider> {
         assetId: widget.assetIds[i],
         isActive: widget.isPageActive && i == _currentMedia,
         speedNotifier: widget.speedNotifier,
+        videoCtrlNotifier: widget.videoCtrlNotifier,
       ),
     );
   }
@@ -483,11 +557,13 @@ class _MediaTile extends StatefulWidget {
     required this.assetId,
     required this.isActive,
     required this.speedNotifier,
+    required this.videoCtrlNotifier,
   });
 
   final String assetId;
   final bool isActive;
   final ValueNotifier<double> speedNotifier;
+  final ValueNotifier<VideoPlayerController?> videoCtrlNotifier;
 
   @override
   State<_MediaTile> createState() => _MediaTileState();
@@ -517,8 +593,15 @@ class _MediaTileState extends State<_MediaTile> {
     }
     if (!widget.isActive && old.isActive) {
       _videoCtrl?.pause();
+      // Clear the shared notifier if we own it
+      if (widget.videoCtrlNotifier.value == _videoCtrl) {
+        widget.videoCtrlNotifier.value = null;
+      }
     } else if (widget.isActive && !old.isActive) {
       _videoCtrl?.play();
+      if (_videoCtrl != null) {
+        widget.videoCtrlNotifier.value = _videoCtrl;
+      }
     }
   }
 
@@ -541,7 +624,10 @@ class _MediaTileState extends State<_MediaTile> {
       }
       await ctrl.setLooping(true);
       _videoCtrl = ctrl;
-      if (widget.isActive) ctrl.play();
+      if (widget.isActive) {
+        ctrl.play();
+        widget.videoCtrlNotifier.value = ctrl;
+      }
     } else {
       final bytes = await asset.thumbnailDataWithSize(
         const ThumbnailSize(1080, 1920),
@@ -556,6 +642,9 @@ class _MediaTileState extends State<_MediaTile> {
   @override
   void dispose() {
     _speedNotifier.removeListener(_onSpeedChanged);
+    if (widget.videoCtrlNotifier.value == _videoCtrl) {
+      widget.videoCtrlNotifier.value = null;
+    }
     _videoCtrl?.dispose();
     super.dispose();
   }
@@ -573,36 +662,17 @@ class _MediaTileState extends State<_MediaTile> {
 
     final ctrl = _videoCtrl;
     if (ctrl != null) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          GestureDetector(
-            onTap: () {
-              ctrl.value.isPlaying ? ctrl.pause() : ctrl.play();
-              setState(() {});
-            },
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: ctrl.value.aspectRatio,
-                child: VideoPlayer(ctrl),
-              ),
-            ),
+      return GestureDetector(
+        onTap: () {
+          ctrl.value.isPlaying ? ctrl.pause() : ctrl.play();
+          setState(() {});
+        },
+        child: Center(
+          child: AspectRatio(
+            aspectRatio: ctrl.value.aspectRatio,
+            child: VideoPlayer(ctrl),
           ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: VideoProgressIndicator(
-              ctrl,
-              allowScrubbing: true,
-              colors: const VideoProgressColors(
-                playedColor: Colors.white,
-                bufferedColor: Colors.white38,
-                backgroundColor: Colors.white12,
-              ),
-            ),
-          ),
-        ],
+        ),
       );
     }
 

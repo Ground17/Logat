@@ -12,7 +12,7 @@ class NotificationAiGenerator {
 
   static const _modelId = 'gemini-3-flash-preview';
 
-  Future<({String title, String body})?> generateOnThisDayContent(
+  Future<({String title, String subtitle, String body})?> generateOnThisDayContent(
     OnThisDayNotifSettings settings,
     AppDatabase db,
   ) async {
@@ -53,7 +53,7 @@ Response format (JSON):
     return _callGemini(prompt);
   }
 
-  Future<({String title, String body})?> generatePeriodicContent(
+  Future<({String title, String subtitle, String body})?> generatePeriodicContent(
     PeriodicNotifRule rule,
     AppDatabase db,
   ) async {
@@ -84,6 +84,7 @@ ${rule.aiPromptStyle}
 Response format (JSON):
 {
   "title": "Notification title (within 20 chars)",
+  "subtitle": "Short subtitle line (within 30 chars, optional context)",
   "body": "Notification body (within 60 chars)"
 }
 ''';
@@ -91,7 +92,7 @@ Response format (JSON):
     return _callGemini(prompt);
   }
 
-  Future<({String title, String body})?> _callGemini(String prompt) async {
+  Future<({String title, String subtitle, String body})?> _callGemini(String prompt) async {
     try {
       final url = Uri.parse(
         'https://generativelanguage.googleapis.com/v1beta/models/$_modelId:generateContent?key=$GEMINI_KEYS',
@@ -127,6 +128,7 @@ Response format (JSON):
       final json = jsonDecode(cleaned) as Map<String, dynamic>;
       return (
         title: json['title'] as String? ?? '',
+        subtitle: json['subtitle'] as String? ?? '',
         body: json['body'] as String? ?? '',
       );
     } catch (_) {

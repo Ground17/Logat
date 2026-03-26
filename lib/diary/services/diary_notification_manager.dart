@@ -11,8 +11,8 @@ import '../database/app_database.dart';
 import '../models/diary_notification_settings.dart';
 import '../models/hundred_days_notif_settings.dart';
 import '../models/notification_history_entry.dart';
+import '../models/diary_filter.dart';
 import '../providers/diary_providers.dart';
-import '../screens/event_detail_screen.dart';
 import '../screens/manual_record_screen.dart';
 import 'hundred_days_notification_service.dart';
 import 'notification_history_service.dart';
@@ -79,9 +79,9 @@ class DiaryNotificationManager {
     return pending.map((r) => r.id).toSet();
   }
 
-  NotificationDetails _buildDetails() {
-    return const NotificationDetails(
-      android: AndroidNotificationDetails(
+  NotificationDetails _buildDetails({String? subtitle}) {
+    return NotificationDetails(
+      android: const AndroidNotificationDetails(
         channelId,
         'Diary Reminders',
         channelDescription: 'Scheduled diary reminders',
@@ -89,6 +89,7 @@ class DiaryNotificationManager {
         priority: Priority.defaultPriority,
       ),
       iOS: DarwinNotificationDetails(
+        subtitle: subtitle?.isEmpty ?? true ? null : subtitle,
         presentAlert: true,
         presentBadge: false,
         presentSound: true,
@@ -98,10 +99,13 @@ class DiaryNotificationManager {
 
   // ── On This Day ───────────────────────────────────────────────────────────
 
+  /// Schedules On This Day notifications for the next [lookAheadDays] days
+  /// that have at least one event from a past year on that calendar date.
   Future<void> scheduleOnThisDay(
     OnThisDayNotifSettings s, {
     String? aiTitle,
     String? aiBody,
+    AppDatabase? db,
   }) async {
     await cancelOnThisDay();
     await _historyService.replaceEntriesOfType('onThisDay');
@@ -110,23 +114,45 @@ class DiaryNotificationManager {
     final title = (s.useAi && aiTitle != null) ? aiTitle : 'On This Day';
     final body = (s.useAi && aiBody != null)
         ? aiBody
-        : 'See the event from N years ago';
+        : 'See memories from this day in past years';
     final details = _buildDetails();
     final now = tz.TZDateTime.now(tz.local);
 
-    Future<void> schedule(int notifId, tz.TZDateTime date,
-        {DateTimeComponents? matchComponents}) async {
-      final entryId =
-          'onThisDay_${notifId}_${date.millisecondsSinceEpoch}';
+    // Collect calendar days (month, day) that have events from past years
+    final ownDb = db == null;
+    final database = db ?? AppDatabase();
+    Set<String> daysWithMemories = {};
+    try {
+      daysWithMemories = await database.getCalendarDaysWithPastEvents(now.year);
+    } finally {
+      if (ownDb) await database.close();
+    }
+
+    // Schedule for next 30 days that have past-year memories
+    var slot = 0;
+    for (var offset = 1; offset <= 30 && slot < 20; offset++) {
+      final candidate = tz.TZDateTime(
+        tz.local,
+        now.year,
+        now.month,
+        now.day + offset,
+        s.hour,
+        s.minute,
+      );
+      final key =
+          '${candidate.month.toString().padLeft(2, '0')}-${candidate.day.toString().padLeft(2, '0')}';
+      if (!daysWithMemories.contains(key)) continue;
+
+      final notifId = onThisDayBaseId + slot;
+      final entryId = 'onThisDay_${notifId}_${candidate.millisecondsSinceEpoch}';
       final payload = jsonEncode({'type': 'onThisDay', 'entryId': entryId});
       await _plugin.zonedSchedule(
         notifId,
         title,
         body,
-        date,
+        candidate,
         details,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        matchDateTimeComponents: matchComponents,
         payload: payload,
       );
       await _historyService.addEntry(NotificationHistoryEntry(
@@ -135,42 +161,10 @@ class DiaryNotificationManager {
         type: 'onThisDay',
         title: title,
         body: body,
-        scheduledAt: date.toLocal(),
+        scheduledAt: candidate.toLocal(),
         payload: payload,
       ));
-    }
-
-    switch (s.scheduleType) {
-      case NotificationScheduleType.daily:
-        var date = tz.TZDateTime(
-            tz.local, now.year, now.month, now.day, s.hour, s.minute);
-        if (date.isBefore(now)) date = date.add(const Duration(days: 1));
-        await schedule(onThisDayBaseId, date,
-            matchComponents: DateTimeComponents.time);
-
-      case NotificationScheduleType.everyNDays:
-        final n = s.intervalDays.clamp(1, 30);
-        var date = tz.TZDateTime(
-            tz.local, now.year, now.month, now.day, s.hour, s.minute);
-        if (date.isBefore(now)) date = date.add(Duration(days: n));
-        for (var i = 0; i < 20; i++) {
-          await schedule(onThisDayBaseId + i, date);
-          date = date.add(Duration(days: n));
-        }
-
-      case NotificationScheduleType.weekdays:
-        var slot = 0;
-        for (final weekday in (s.weekdays.toList()..sort())) {
-          if (slot >= 7) break;
-          var date = tz.TZDateTime(
-              tz.local, now.year, now.month, now.day, s.hour, s.minute);
-          while (date.weekday != weekday || date.isBefore(now)) {
-            date = date.add(const Duration(days: 1));
-          }
-          await schedule(onThisDayBaseId + slot, date,
-              matchComponents: DateTimeComponents.dayOfWeekAndTime);
-          slot++;
-        }
+      slot++;
     }
   }
 
@@ -181,6 +175,7 @@ class DiaryNotificationManager {
     PeriodicNotifRule rule, {
     String? aiTitle,
     String? aiBody,
+    String? aiSubtitle,
   }) async {
     await cancelPeriodicRule(idx);
     await _historyService.replaceEntriesOfType('periodic_$idx');
@@ -189,7 +184,10 @@ class DiaryNotificationManager {
     final baseId = periodicBaseId(idx);
     final title = (rule.useAi && aiTitle != null) ? aiTitle : rule.label;
     final body = (rule.useAi && aiBody != null) ? aiBody : '';
-    final details = _buildDetails();
+    final subtitle = rule.useAi && aiSubtitle != null
+        ? aiSubtitle
+        : rule.subtitle;
+    final details = _buildDetails(subtitle: subtitle);
     final now = tz.TZDateTime.now(tz.local);
 
     Future<void> schedule(int notifId, tz.TZDateTime date,
@@ -289,15 +287,10 @@ class DiaryNotificationManager {
 
       final title = (s.useAi && aiTitle != null)
           ? aiTitle
-          : group.length == 1
-              ? 'Day ${first.milestoneN} Milestone'
-              : '${group.length} Milestones Today';
+          : '${group.length} ${group.length == 1 ? 'Milestone' : 'Milestones'} Today';
       final body = (s.useAi && aiBody != null)
           ? aiBody
-          : group
-              .map((m) =>
-                  m.eventTitle != null ? '"${m.eventTitle}" day ${m.milestoneN}' : 'Day ${m.milestoneN}')
-              .join(', ');
+          : 'See memories that have reached a milestone today';
 
       final payload = jsonEncode({
         'type': 'hundredDays',
@@ -355,7 +348,7 @@ class DiaryNotificationManager {
     DiaryNotificationSettings settings, {
     String? otdAiTitle,
     String? otdAiBody,
-    Map<int, ({String title, String body})>? periodicAiContent,
+    Map<int, ({String title, String subtitle, String body})>? periodicAiContent,
     List<HundredDaysMilestone>? hundredDaysMilestones,
     String? hdAiTitle,
     String? hdAiBody,
@@ -372,6 +365,7 @@ class DiaryNotificationManager {
         settings.periodicRules[i],
         aiTitle: ai?.title,
         aiBody: ai?.body,
+        aiSubtitle: ai?.subtitle,
       );
     }
     if (hundredDaysMilestones != null) {
@@ -414,56 +408,30 @@ class DiaryNotificationManager {
   static Future<void> _navigateOnThisDay() async {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
-    // Capture context before any async gap
     final context = nav.context;
 
-    final db = AppDatabase();
-    try {
-      final now = DateTime.now();
-      final events = await db.queryEventsOnThisDay(
-        month: now.month,
-        day: now.day,
-        windowDays: 0,
-        currentYear: now.year,
-      );
-      if (events.isNotEmpty) {
-        nav.push(MaterialPageRoute(
-          builder: (_) => EventDetailScreen(event: events.first),
-        ));
-      } else {
-        // No events — navigate to List tab
-        ProviderScope.containerOf(context) // ignore: use_build_context_synchronously
-            .read(pendingTabProvider.notifier)
-            .state = 1;
-      }
-    } finally {
-      await db.close();
-    }
+    // Apply similarDate filter + set selected date to today → go to List tab
+    final container = ProviderScope.containerOf(context); // ignore: use_build_context_synchronously
+    final now = DateTime.now().toUtc();
+    container.read(selectedDateProvider.notifier).state =
+        DateTime.utc(now.year, now.month, now.day);
+    container.read(diaryFilterProvider.notifier).update(
+          const DiaryFilter(similarDate: true),
+        );
+    container.read(pendingTabProvider.notifier).state = 1;
   }
 
   static Future<void> _navigateHundredDays(List<String> eventIds) async {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
+    final context = nav.context;
 
-    if (eventIds.length == 1) {
-      final db = AppDatabase();
-      try {
-        final event = await db.getEventById(eventIds.first);
-        if (event != null) {
-          nav.push(MaterialPageRoute(
-            builder: (_) => EventDetailScreen(event: event),
-          ));
-        }
-      } finally {
-        await db.close();
-      }
-    } else {
-      // Multiple milestones on same day → go to List tab
-      final context = nav.context;
-      ProviderScope.containerOf(context) // ignore: use_build_context_synchronously
-          .read(pendingTabProvider.notifier)
-          .state = 1;
-    }
+    // Apply isMilestoneDay filter → go to List tab
+    final container = ProviderScope.containerOf(context); // ignore: use_build_context_synchronously
+    container.read(diaryFilterProvider.notifier).update(
+          const DiaryFilter(isMilestoneDay: true),
+        );
+    container.read(pendingTabProvider.notifier).state = 1;
   }
 
   static void _navigatePeriodic() {

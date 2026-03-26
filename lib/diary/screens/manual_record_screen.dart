@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
@@ -12,9 +13,13 @@ import 'diary_settings_screen.dart';
 import 'location_picker_screen.dart';
 
 class ManualRecordScreen extends ConsumerStatefulWidget {
-  const ManualRecordScreen({super.key, this.initialTitle});
+  const ManualRecordScreen({super.key, this.initialTitle, this.sharedFilePaths});
 
   final String? initialTitle;
+
+  /// File paths from a system share intent (e.g. sharing from Photos app).
+  /// The screen will try to match these to photo_manager asset IDs by filename.
+  final List<String>? sharedFilePaths;
 
   @override
   ConsumerState<ManualRecordScreen> createState() => _ManualRecordScreenState();
@@ -29,6 +34,54 @@ class _ManualRecordScreenState extends ConsumerState<ManualRecordScreen> {
   LatLng? _selectedLocation;
   List<String> _selectedAssetIds = [];
   bool _saving = false;
+  bool _matchingShared = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final paths = widget.sharedFilePaths;
+    if (paths != null && paths.isNotEmpty) {
+      _matchSharedFiles(paths);
+    }
+  }
+
+  Future<void> _matchSharedFiles(List<String> paths) async {
+    setState(() => _matchingShared = true);
+    try {
+      final permission = await PhotoManager.requestPermissionExtend();
+      if (!permission.isAuth) return;
+
+      final sharedNames =
+          paths.map((p) => p.split('/').last.toLowerCase()).toSet();
+
+      final albums = await PhotoManager.getAssetPathList(
+        type: RequestType.common,
+        onlyAll: true,
+      );
+      if (albums.isEmpty) return;
+
+      final total = await albums.first.assetCountAsync;
+      final assets = await albums.first.getAssetListRange(
+        start: 0,
+        end: min(total, 300),
+      );
+
+      final matched = <String>[];
+      for (final asset in assets) {
+        final title = (await asset.titleAsync).toLowerCase();
+        if (sharedNames.contains(title)) {
+          matched.add(asset.id);
+          if (matched.length == paths.length) break;
+        }
+      }
+
+      if (matched.isNotEmpty && mounted) {
+        setState(() => _selectedAssetIds = matched);
+      }
+    } finally {
+      if (mounted) setState(() => _matchingShared = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -258,12 +311,20 @@ class _ManualRecordScreenState extends ConsumerState<ManualRecordScreen> {
             ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
-            onPressed: _pickPhotos,
-            icon: const Icon(Icons.photo_library),
+            onPressed: _matchingShared ? null : _pickPhotos,
+            icon: _matchingShared
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.photo_library),
             label: Text(
-              _selectedAssetIds.isEmpty
-                  ? 'Select Photos'
-                  : '${_selectedAssetIds.length} selected',
+              _matchingShared
+                  ? 'Loading shared photos…'
+                  : _selectedAssetIds.isEmpty
+                      ? 'Select Photos'
+                      : '${_selectedAssetIds.length} selected',
             ),
           ),
         ],

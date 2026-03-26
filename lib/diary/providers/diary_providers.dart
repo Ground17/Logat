@@ -199,15 +199,8 @@ final selectedDateProvider = StateProvider<DateTime>((ref) {
 });
 
 class DateRangeFilterNotifier extends StateNotifier<DateRangeFilter> {
-  static DateRangeFilter _defaultRange() {
-    final now = DateTime.now().toUtc();
-    return DateRangeFilter(
-      start: DateTime.utc(now.year, now.month - 1, now.day),
-      end: DateTime.utc(now.year, now.month, now.day + 1),
-    );
-  }
-
-  DateRangeFilterNotifier() : super(_defaultRange()) {
+  DateRangeFilterNotifier()
+      : super(DateRangeFilter.relative(1, RelativeDateUnit.months)) {
     _load();
   }
 
@@ -218,6 +211,12 @@ class DateRangeFilterNotifier extends StateNotifier<DateRangeFilter> {
   Future<void> update(DateRangeFilter filter) async {
     state = filter;
     await filter.save();
+  }
+
+  Future<void> resetToDefault() async {
+    final def = await DateRangeFilter.loadDefault();
+    state = def;
+    await def.save();
   }
 }
 

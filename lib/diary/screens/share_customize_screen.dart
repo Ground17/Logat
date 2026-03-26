@@ -400,14 +400,18 @@ class _ShareCustomizeScreenState extends State<ShareCustomizeScreen> {
           ),
         ),
 
-        // Watermark
-        const Positioned(
-          left: 16,
-          top: 12,
-          child: Text(
-            'logat',
-            style: TextStyle(
-                color: Colors.white60, fontSize: 11, letterSpacing: 1.5),
+        // App icon watermark — bottom right
+        Positioned(
+          right: 12,
+          bottom: 12,
+          child: Opacity(
+            opacity: 0.75,
+            child: Image.asset(
+              'assets/logo.png',
+              width: 28,
+              height: 28,
+              fit: BoxFit.contain,
+            ),
           ),
         ),
 

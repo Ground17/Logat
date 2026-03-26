@@ -140,6 +140,7 @@ class PeriodicNotifRule {
   const PeriodicNotifRule({
     required this.id,
     this.label = 'Reminder',
+    this.subtitle = '',
     this.enabled = true,
     this.scheduleType = NotificationScheduleType.daily,
     this.hour = 9,
@@ -153,6 +154,7 @@ class PeriodicNotifRule {
 
   final int id; // 0-4
   final String label;
+  final String subtitle;
   final bool enabled;
   final NotificationScheduleType scheduleType;
   final int hour;
@@ -165,6 +167,7 @@ class PeriodicNotifRule {
 
   PeriodicNotifRule copyWith({
     String? label,
+    String? subtitle,
     bool? enabled,
     NotificationScheduleType? scheduleType,
     int? hour,
@@ -178,6 +181,7 @@ class PeriodicNotifRule {
     return PeriodicNotifRule(
       id: id,
       label: label ?? this.label,
+      subtitle: subtitle ?? this.subtitle,
       enabled: enabled ?? this.enabled,
       scheduleType: scheduleType ?? this.scheduleType,
       hour: hour ?? this.hour,
@@ -195,6 +199,7 @@ class PeriodicNotifRule {
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_k('label'), label);
+    await prefs.setString(_k('subtitle'), subtitle);
     await prefs.setBool(_k('enabled'), enabled);
     await prefs.setString(_k('schedule_type'), scheduleType.name);
     await prefs.setInt(_k('hour'), hour);
@@ -224,6 +229,7 @@ class PeriodicNotifRule {
     return PeriodicNotifRule(
       id: id,
       label: prefs.getString(k('label')) ?? 'Reminder',
+      subtitle: prefs.getString(k('subtitle')) ?? '',
       enabled: prefs.getBool(k('enabled')) ?? true,
       scheduleType: scheduleType,
       hour: prefs.getInt(k('hour')) ?? 9,

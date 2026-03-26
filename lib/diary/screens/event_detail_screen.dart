@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_manager/photo_manager.dart' hide LatLng;
+import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/event_summary.dart';
@@ -575,6 +577,45 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     if (mounted) Navigator.pop(context);
   }
 
+  Future<void> _editAssetOrder() async {
+    final ids = List<String>.from(_event.assetIds
+        .where((id) => id != 'manual_no_photo'));
+    if (ids.length < 2) return;
+
+    final result = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _AssetReorderScreen(assetIds: ids),
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    final db = ref.read(appDatabaseProvider);
+    await db.updateEventAssetOrder(_event.eventId, result);
+    setState(() {
+      _event = EventSummary(
+        eventId: _event.eventId,
+        startAt: _event.startAt,
+        endAt: _event.endAt,
+        assetCount: _event.assetCount,
+        representativeAssetId: result.first,
+        qualityScore: _event.qualityScore,
+        isMoving: _event.isMoving,
+        assetIds: result,
+        tags: _event.tags,
+        latitude: _event.latitude,
+        longitude: _event.longitude,
+        isManual: _event.isManual,
+        title: _event.title,
+        userMemo: _event.userMemo,
+        isFavorite: _event.isFavorite,
+        color: _event.color,
+        customAddress: _event.customAddress,
+      );
+    });
+    ref.invalidate(filteredJournalEventsProvider);
+  }
+
   Future<void> _splitEvent() async {
     final result = await Navigator.push<List<String>>(
       context,
@@ -664,6 +705,17 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
               ),
               if (_event.assetIds.length >= 2)
                 const PopupMenuItem(
+                  value: 'reorder',
+                  child: Row(
+                    children: [
+                      Icon(Icons.swap_vert, size: 20),
+                      SizedBox(width: 8),
+                      Text('Reorder media'),
+                    ],
+                  ),
+                ),
+              if (_event.assetIds.length >= 2)
+                const PopupMenuItem(
                   value: 'split',
                   child: Row(
                     children: [
@@ -704,6 +756,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                   ),
                 );
               }
+              if (v == 'reorder') _editAssetOrder();
               if (v == 'split') _splitEvent();
               if (v == 'merge') _mergeEvent();
               if (v == 'delete') _deleteEvent();
@@ -1437,6 +1490,107 @@ class _VideoPlayerScreenState extends State<_VideoPlayerScreen> {
                 ),
               )
             : const CircularProgressIndicator(color: Colors.white),
+      ),
+    );
+  }
+}
+
+// ─── Asset reorder screen ─────────────────────────────────────────────────
+
+class _AssetReorderScreen extends StatefulWidget {
+  const _AssetReorderScreen({required this.assetIds});
+
+  final List<String> assetIds;
+
+  @override
+  State<_AssetReorderScreen> createState() => _AssetReorderScreenState();
+}
+
+class _AssetReorderScreenState extends State<_AssetReorderScreen> {
+  late List<String> _ids;
+  final Map<String, Uint8List?> _thumbs = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _ids = List.from(widget.assetIds);
+    _loadThumbs();
+  }
+
+  Future<void> _loadThumbs() async {
+    for (final id in _ids) {
+      final asset = await AssetEntity.fromId(id);
+      if (asset == null || !mounted) continue;
+      final bytes =
+          await asset.thumbnailDataWithSize(const ThumbnailSize(200, 200));
+      if (mounted) setState(() => _thumbs[id] = bytes);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Reorder Media'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, _ids),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+      body: ReorderableGridView.builder(
+        padding: const EdgeInsets.all(4),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 4,
+          mainAxisSpacing: 4,
+        ),
+        itemCount: _ids.length,
+        onReorder: (oldIndex, newIndex) {
+          setState(() {
+            final item = _ids.removeAt(oldIndex);
+            _ids.insert(newIndex, item);
+          });
+        },
+        itemBuilder: (ctx, i) {
+          final id = _ids[i];
+          final bytes = _thumbs[id];
+          return Stack(
+            key: ValueKey(id),
+            fit: StackFit.expand,
+            children: [
+              if (bytes != null)
+                Image.memory(bytes, fit: BoxFit.cover)
+              else
+                Container(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: const Icon(Icons.photo_outlined, color: Colors.white54),
+                ),
+              if (i == 0)
+                Positioned(
+                  top: 4,
+                  left: 4,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Cover',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -208,7 +208,22 @@ class _YearlyRecapScreenState extends ConsumerState<YearlyRecapScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 4, bottom: 4),
+                      child: Opacity(
+                        opacity: 0.6,
+                        child: Image.asset(
+                          'assets/logo.png',
+                          width: 28,
+                          height: 28,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

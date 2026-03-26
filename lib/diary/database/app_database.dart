@@ -72,6 +72,7 @@ CREATE INDEX idx_events_location ON events(latitude, longitude);
 CREATE TABLE event_assets (
   event_id TEXT NOT NULL,
   asset_id TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (event_id, asset_id)
 );
 CREATE INDEX idx_event_assets_asset_id ON event_assets(asset_id);
@@ -165,7 +166,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -227,6 +228,11 @@ class AppDatabase extends GeneratedDatabase {
           if (from < 5) {
             await customStatement(
               'ALTER TABLE events ADD COLUMN custom_address TEXT;',
+            );
+          }
+          if (from < 6) {
+            await customStatement(
+              'ALTER TABLE event_assets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;',
             );
           }
         },
@@ -479,6 +485,40 @@ class AppDatabase extends GeneratedDatabase {
         await customStatement(
           'INSERT OR IGNORE INTO event_assets(event_id, asset_id) VALUES (?, ?)',
           [eventId, assetId],
+        );
+      }
+    });
+  }
+
+  /// Returns a set of 'MM-dd' strings for calendar days that have at least one
+  /// event from a year prior to [currentYear].
+  Future<Set<String>> getCalendarDaysWithPastEvents(int currentYear) async {
+    final rows = await customSelect(
+      '''
+      SELECT DISTINCT
+        strftime('%m-%d', start_at / 1000, 'unixepoch', 'localtime') AS mmdd
+      FROM events
+      WHERE strftime('%Y', start_at / 1000, 'unixepoch', 'localtime') < ?
+      ''',
+      variables: [Variable<String>(currentYear.toString())],
+    ).get();
+    return rows.map((r) => r.read<String>('mmdd')).toSet();
+  }
+
+  Future<void> updateEventAssetOrder(
+      String eventId, List<String> orderedAssetIds) async {
+    await transaction(() async {
+      for (var i = 0; i < orderedAssetIds.length; i++) {
+        await customStatement(
+          'UPDATE event_assets SET sort_order = ? WHERE event_id = ? AND asset_id = ?',
+          [i, eventId, orderedAssetIds[i]],
+        );
+      }
+      // Update representative_asset_id to the first in order
+      if (orderedAssetIds.isNotEmpty) {
+        await customStatement(
+          'UPDATE events SET representative_asset_id = ? WHERE event_id = ?',
+          [orderedAssetIds.first, eventId],
         );
       }
     });
@@ -1359,7 +1399,7 @@ class AppDatabase extends GeneratedDatabase {
       SELECT event_id, asset_id
       FROM event_assets
       WHERE event_id IN (${List.filled(eventIds.length, '?').join(', ')})
-      ORDER BY asset_id ASC
+      ORDER BY sort_order ASC, asset_id ASC
       ''',
       variables: eventIds.map((item) => Variable<String>(item)).toList(),
     ).get();

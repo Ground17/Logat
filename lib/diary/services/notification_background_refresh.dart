@@ -39,7 +39,7 @@ void callbackDispatcher() {
       // 3. Generate AI content for enabled rules
       String? otdAiTitle;
       String? otdAiBody;
-      final periodicAiContent = <int, ({String title, String body})>{};
+      final periodicAiContent = <int, ({String title, String subtitle, String body})>{};
 
       if (settings.onThisDay.enabled && settings.onThisDay.useAi) {
         final db = AppDatabase();

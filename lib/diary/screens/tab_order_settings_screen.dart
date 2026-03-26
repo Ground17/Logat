@@ -7,7 +7,7 @@ import '../providers/diary_providers.dart';
 const Map<int, String> kTabLabels = {
   0: 'Loop',
   1: 'List',
-  2: 'Grid',
+  2: 'Gallery',
   3: 'Activity',
   4: 'Map',
 };
