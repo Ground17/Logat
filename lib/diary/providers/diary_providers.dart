@@ -488,22 +488,34 @@ List<EventSummary> _applyFilter(
       final memoMatch = e.userMemo?.toLowerCase().contains(text) ?? false;
       if (!titleMatch && !memoMatch) return false;
     }
-    if (filter.similarDate) {
+    if (filter.similarDate || filter.isMilestoneDay) {
       final local = e.startAt.toLocal();
       final dayDiff = (local.month * 31 + local.day) -
           (selectedDate.month * 31 + selectedDate.day);
-      if (dayDiff.abs() > 7) return false;
+      final matchesSimilar = filter.similarDate && dayDiff.abs() <= 7;
+      final matchesMilestone =
+          filter.isMilestoneDay && _isMilestoneDayCheck(e.startAt);
+      if (!matchesSimilar && !matchesMilestone) return false;
     }
     if (filter.favoritesOnly && !e.isFavorite) return false;
     if (filter.hasLocation && (e.latitude == null || e.longitude == null)) {
       return false;
     }
-    if (filter.isMilestoneDay && !_isMilestoneDayCheck(e.startAt)) return false;
+    if (filter.colorFilters.isNotEmpty) {
+      if (e.color == null || !filter.colorFilters.contains(e.color)) {
+        return false;
+      }
+    }
     return true;
   }).toList();
 }
 
 final selectedFolderFilterProvider = StateProvider<DiaryFolder?>((_) => null);
+
+// In-memory edits made in EventDetailScreen — applied on top of DB data
+// so changes are visible immediately without a full re-query.
+final eventPatchProvider =
+    StateProvider<Map<String, EventSummary>>((ref) => const {});
 
 final filteredJournalEventsProvider = FutureProvider<List<EventSummary>>((ref) async {
   final events = await ref.watch(mapEventsProvider.future);
@@ -531,6 +543,12 @@ final filteredJournalEventsProvider = FutureProvider<List<EventSummary>>((ref) a
     );
     final folderEventIds = {for (final e in folderContents) e.eventId};
     filtered = filtered.where((e) => folderEventIds.contains(e.eventId)).toList();
+  }
+
+  // Apply in-memory patches so detail-screen edits are visible immediately.
+  final patches = ref.watch(eventPatchProvider);
+  if (patches.isNotEmpty) {
+    filtered = filtered.map((e) => patches[e.eventId] ?? e).toList();
   }
 
   return filtered;
@@ -570,7 +588,8 @@ bool _isMilestoneDayCheck(DateTime eventDate) {
   final days = DateTime(today.year, today.month, today.day)
       .difference(DateTime(local.year, local.month, local.day))
       .inDays;
-  return days > 0 && days % 100 == 0;
+  if (days <= 0 || days > 10000) return false;
+  return days < 1000 ? days % 100 == 0 : days % 1000 == 0;
 }
 
 bool _isSpecialDay(DateTime eventDate) {
@@ -580,62 +599,126 @@ bool _isSpecialDay(DateTime eventDate) {
       .difference(DateTime(local.year, local.month, local.day))
       .inDays;
   if (days <= 0) return false;
-  if (days % 100 == 0) return true;
+  if (days <= 10000 && (days < 1000 ? days % 100 == 0 : days % 1000 == 0)) return true;
   if (today.month == local.month && today.day == local.day) return true;
   return false;
 }
 
-final loopItemsProvider =
-    FutureProvider<List<EventSummary>>((ref) async {
-  final events = await ref.watch(filteredJournalEventsProvider.future);
-  final algoSettings = ref.watch(loopAlgorithmSettingsProvider);
-  final viewCounts = await ViewCountService.loadAll();
+// Maintains a stable weighted-random ordering of loop event IDs.
+// Only re-randomises when the SET of eligible event IDs changes, so
+// individual event edits never reset the loop position.
+class LoopOrderNotifier extends StateNotifier<List<String>> {
+  LoopOrderNotifier(this._ref) : super(const []) {
+    _initialize();
+  }
 
-  final filtered = events
-      .where((e) => e.assetIds.any((id) => id != 'manual_no_photo'))
-      .toList();
+  final Ref _ref;
+  Set<String> _lastEligibleIds = {};
 
-  if (filtered.isEmpty) return filtered;
+  Future<void> _initialize() async {
+    await _recompute();
+    _ref.listen<AsyncValue<List<EventSummary>>>(
+      filteredJournalEventsProvider,
+      (_, next) {
+        if (next.hasValue) _onEventsChanged(next.requireValue);
+      },
+    );
+  }
 
-  // Compute average view count for relative comparison
-  final totalViews = viewCounts.values.fold<int>(0, (s, v) => s + v);
-  final avgViews = viewCounts.isEmpty ? 0.0 : totalViews / viewCounts.length;
+  void _onEventsChanged(List<EventSummary> events) {
+    final ids = events
+        .where((e) => e.assetIds.any((id) => id != 'manual_no_photo'))
+        .map((e) => e.eventId)
+        .toSet();
+    if (_sameSet(ids, _lastEligibleIds)) return; // only data changed → skip
+    _recomputeFromEvents(events);
+  }
 
-  final rng = Random();
-  final now = DateTime.now();
+  Future<void> _recompute() async {
+    try {
+      final events = await _ref.read(filteredJournalEventsProvider.future);
+      await _recomputeFromEvents(events);
+    } catch (_) {}
+  }
 
-  // Efraimidis-Spirakis weighted random permutation:
-  // score = u^(1/weight), sort descending → higher weight = earlier
-  final scored = filtered.map((e) {
-    double weight = algoSettings.baseWeight.clamp(1, 10).toDouble();
+  Future<void> _recomputeFromEvents(List<EventSummary> events) async {
+    final algoSettings = _ref.read(loopAlgorithmSettingsProvider);
+    final viewCounts = await ViewCountService.loadAll();
 
-    if (e.isFavorite) weight += algoSettings.favoriteWeight;
-    if (_isSpecialDay(e.startAt)) weight += algoSettings.onThisDayWeight;
+    final filtered = events
+        .where((e) => e.assetIds.any((id) => id != 'manual_no_photo'))
+        .toList();
+    _lastEligibleIds = filtered.map((e) => e.eventId).toSet();
 
-    final daysDiff = now.difference(e.startAt.toLocal()).inDays.abs();
-    if (daysDiff <= 30) weight += algoSettings.recentWeight;
-
-    final vc = viewCounts[e.eventId] ?? 0;
-    switch (algoSettings.viewCountMode) {
-      case LoopViewCountMode.boostUnwatched:
-        if (vc == 0) {
-          weight *= 1.5;
-        } else if (vc > avgViews) {
-          weight *= (1.0 / (1.0 + (vc - avgViews) * 0.05)).clamp(0.3, 1.0);
-        }
-      case LoopViewCountMode.boostWatched:
-        if (vc > 0) weight *= (1.0 + log(1.0 + vc) * 0.3);
-      case LoopViewCountMode.ignore:
-        break;
+    if (filtered.isEmpty) {
+      if (mounted) state = const [];
+      return;
     }
 
-    final u = rng.nextDouble().clamp(1e-10, 1.0);
-    final score = pow(u, 1.0 / weight.clamp(0.1, 30.0));
-    return (event: e, score: score);
-  }).toList();
+    final totalViews = viewCounts.values.fold<int>(0, (s, v) => s + v);
+    final avgViews =
+        viewCounts.isEmpty ? 0.0 : totalViews / viewCounts.length;
+    final rng = Random();
+    final now = DateTime.now();
 
-  scored.sort((a, b) => b.score.compareTo(a.score));
-  return scored.map((s) => s.event).toList();
+    final scored = filtered.map((e) {
+      double weight = algoSettings.baseWeight.clamp(1, 10).toDouble();
+      if (e.isFavorite) weight += algoSettings.favoriteWeight;
+      if (_isSpecialDay(e.startAt)) weight += algoSettings.onThisDayWeight;
+      final daysDiff = now.difference(e.startAt.toLocal()).inDays.abs();
+      if (daysDiff <= 30) weight += algoSettings.recentWeight;
+      final vc = viewCounts[e.eventId] ?? 0;
+      switch (algoSettings.viewCountMode) {
+        case LoopViewCountMode.boostUnwatched:
+          if (vc == 0) {
+            weight *= 1.5;
+          } else if (vc > avgViews) {
+            weight *= (1.0 / (1.0 + (vc - avgViews) * 0.05)).clamp(0.3, 1.0);
+          }
+        case LoopViewCountMode.boostWatched:
+          if (vc > 0) weight *= (1.0 + log(1.0 + vc) * 0.3);
+        case LoopViewCountMode.ignore:
+          break;
+      }
+      final u = rng.nextDouble().clamp(1e-10, 1.0);
+      final score = pow(u, 1.0 / weight.clamp(0.1, 30.0)) as double;
+      return (eventId: e.eventId, score: score);
+    }).toList();
+
+    scored.sort((a, b) => b.score.compareTo(a.score));
+    if (mounted) state = scored.map((s) => s.eventId).toList();
+  }
+
+  Future<void> forceRefresh() async {
+    _lastEligibleIds = {};
+    await _recompute();
+  }
+
+  static bool _sameSet<T>(Set<T> a, Set<T> b) {
+    if (a.length != b.length) return false;
+    return a.containsAll(b);
+  }
+}
+
+final loopOrderedIdsProvider =
+    StateNotifierProvider<LoopOrderNotifier, List<String>>(
+  (ref) => LoopOrderNotifier(ref),
+);
+
+// Maps the stable ordered IDs to current event data (including patches).
+// Re-builds when data changes but preserves the loop order.
+final loopItemsProvider = FutureProvider<List<EventSummary>>((ref) async {
+  final orderedIds = ref.watch(loopOrderedIdsProvider);
+  if (orderedIds.isEmpty) {
+    await ref.watch(filteredJournalEventsProvider.future);
+    return [];
+  }
+  final events = await ref.watch(filteredJournalEventsProvider.future);
+  final eventMap = {for (final e in events) e.eventId: e};
+  return orderedIds
+      .map((id) => eventMap[id])
+      .whereType<EventSummary>()
+      .toList();
 });
 
 // ─── Indexing controller ──────────────────────────────────────────────────

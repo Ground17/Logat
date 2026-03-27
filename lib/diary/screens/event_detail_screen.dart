@@ -109,6 +109,15 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
         _address = address;
         _loadingAddress = false;
       });
+      // Persist the geocoded address as customAddress so it's shown on reload
+      if (address != null) {
+        final db = ref.read(appDatabaseProvider);
+        await db.updateEventAddress(_event.eventId, address);
+        if (mounted) {
+          setState(() => _event = _copyEvent(customAddress: address));
+          _patchEvent();
+        }
+      }
     }
   }
 
@@ -260,8 +269,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           customAddress: _event.customAddress,
         );
       });
-      ref.invalidate(mapEventsProvider);
-      ref.invalidate(filteredJournalEventsProvider);
+      _patchEvent();
     }
   }
 
@@ -299,7 +307,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     setState(() {
       _event = _copyEvent(startAt: newStart, endAt: newEnd);
     });
-    ref.invalidate(filteredJournalEventsProvider);
+    _patchEvent();
   }
 
   Future<void> _editLocation() async {
@@ -324,8 +332,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       _address = null;
       _loadingAddress = true;
     });
+    _patchEvent();
     ref.invalidate(mapEventsProvider);
-    ref.invalidate(filteredJournalEventsProvider);
 
     // Reverse geocode and offer to update address
     final newAddr = await GeocodingService()
@@ -357,6 +365,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       if (update == true && mounted) {
         await db.updateEventAddress(_event.eventId, newAddr);
         setState(() => _event = _copyEvent(customAddress: newAddr));
+        _patchEvent();
       }
     }
   }
@@ -397,6 +406,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       _address = newAddr;
       _event = _copyEvent(customAddress: newAddr);
     });
+    _patchEvent();
   }
 
   Future<void> _toggleFavorite() async {
@@ -404,8 +414,16 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     final newValue = !_event.isFavorite;
     await db.updateEventFavorite(_event.eventId, newValue);
     setState(() => _event = _copyEvent(isFavorite: newValue));
+    _patchEvent();
     ref.invalidate(mapEventsProvider);
-    ref.invalidate(filteredJournalEventsProvider);
+  }
+
+  // Push the current _event into the shared patch map so the main screen
+  // reflects the edit immediately without a full provider invalidation.
+  void _patchEvent() {
+    ref.read(eventPatchProvider.notifier).update(
+      (map) => {...map, _event.eventId: _event},
+    );
   }
 
   // Helper to copy _event with partial overrides
@@ -613,7 +631,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
         customAddress: _event.customAddress,
       );
     });
-    ref.invalidate(filteredJournalEventsProvider);
   }
 
   Future<void> _splitEvent() async {
@@ -626,8 +643,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     if (result == null || !mounted) return;
     final db = ref.read(appDatabaseProvider);
     await db.splitEvent(_event.eventId, result);
+    ref.read(eventPatchProvider.notifier).update((map) {
+      final m = Map<String, EventSummary>.from(map);
+      m.remove(_event.eventId);
+      return m;
+    });
     ref.invalidate(mapEventsProvider);
-    ref.invalidate(filteredJournalEventsProvider);
     if (mounted) Navigator.pop(context);
   }
 
@@ -663,8 +684,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
     final db = ref.read(appDatabaseProvider);
     await db.mergeEventsInto(picked.eventId, _event.eventId);
+    ref.read(eventPatchProvider.notifier).update((map) {
+      final m = Map<String, EventSummary>.from(map);
+      m.remove(_event.eventId);
+      return m;
+    });
     ref.invalidate(mapEventsProvider);
-    ref.invalidate(filteredJournalEventsProvider);
     if (mounted) Navigator.pop(context);
   }
 

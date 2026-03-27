@@ -131,7 +131,7 @@ class _DiaryNotificationSettingsScreenState
                 _SectionHeader(title: 'On This Day'),
                 _buildOtdSection(),
                 const Divider(),
-                _SectionHeader(title: 'N×100 Day Milestones'),
+                _SectionHeader(title: 'Anniversary Day Milestones'),
                 _buildHundredDaysSection(),
                 const Divider(),
                 _SectionHeader(title: 'Periodic Reminders'),
@@ -209,14 +209,14 @@ class _DiaryNotificationSettingsScreenState
     );
   }
 
-  // ── N×100 Day Milestones section ──────────────────────────────────────────
+  // ── Anniversary Day Milestones section ────────────────────────────────────
 
   Widget _buildHundredDaysSection() {
     return Column(
       children: [
         SwitchListTile(
-          title: const Text('N×100 Day Milestones'),
-          subtitle: const Text('Notify on 100-day, 200-day, 300-day... anniversaries'),
+          title: const Text('Anniversary Day Milestones'),
+          subtitle: const Text('Notify on 100–900 day and 1,000–10,000 day anniversaries'),
           value: _hd.enabled,
           onChanged: (v) => _saveHd(_hd.copyWith(enabled: v)),
         ),

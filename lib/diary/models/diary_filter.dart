@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 class DiaryFilter {
@@ -8,6 +10,7 @@ class DiaryFilter {
   final bool hasPhoto;
   final bool hasVideo;
   final bool isMilestoneDay; // Only N×100 day milestone events
+  final Set<int> colorFilters; // Color.value set; empty = no color filter
 
   const DiaryFilter({
     this.searchText = '',
@@ -17,6 +20,7 @@ class DiaryFilter {
     this.hasPhoto = false,
     this.hasVideo = false,
     this.isMilestoneDay = false,
+    this.colorFilters = const {},
   });
 
   DiaryFilter copyWith({
@@ -27,6 +31,7 @@ class DiaryFilter {
     bool? hasPhoto,
     bool? hasVideo,
     bool? isMilestoneDay,
+    Set<int>? colorFilters,
   }) {
     return DiaryFilter(
       searchText: searchText ?? this.searchText,
@@ -36,6 +41,7 @@ class DiaryFilter {
       hasPhoto: hasPhoto ?? this.hasPhoto,
       hasVideo: hasVideo ?? this.hasVideo,
       isMilestoneDay: isMilestoneDay ?? this.isMilestoneDay,
+      colorFilters: colorFilters ?? this.colorFilters,
     );
   }
 
@@ -46,6 +52,7 @@ class DiaryFilter {
   static const _keyHasPhoto = 'df_has_photo';
   static const _keyHasVideo = 'df_has_video';
   static const _keyIsMilestoneDay = 'df_milestone_day';
+  static const _keyColorFilters = 'df_color_filters';
 
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
@@ -56,10 +63,18 @@ class DiaryFilter {
     await prefs.setBool(_keyHasPhoto, hasPhoto);
     await prefs.setBool(_keyHasVideo, hasVideo);
     await prefs.setBool(_keyIsMilestoneDay, isMilestoneDay);
+    await prefs.setString(_keyColorFilters, jsonEncode(colorFilters.toList()));
   }
 
   static Future<DiaryFilter> load() async {
     final prefs = await SharedPreferences.getInstance();
+    Set<int> colorFilters = const {};
+    final colorJson = prefs.getString(_keyColorFilters);
+    if (colorJson != null) {
+      try {
+        colorFilters = (jsonDecode(colorJson) as List).cast<int>().toSet();
+      } catch (_) {}
+    }
     return DiaryFilter(
       searchText: prefs.getString(_keySearch) ?? '',
       similarDate: prefs.getBool(_keySimilarDate) ?? false,
@@ -68,6 +83,7 @@ class DiaryFilter {
       hasPhoto: prefs.getBool(_keyHasPhoto) ?? false,
       hasVideo: prefs.getBool(_keyHasVideo) ?? false,
       isMilestoneDay: prefs.getBool(_keyIsMilestoneDay) ?? false,
+      colorFilters: colorFilters,
     );
   }
 
@@ -78,5 +94,6 @@ class DiaryFilter {
       !hasLocation &&
       !hasPhoto &&
       !hasVideo &&
-      !isMilestoneDay;
+      !isMilestoneDay &&
+      colorFilters.isEmpty;
 }

@@ -65,7 +65,9 @@ CREATE TABLE events (
   is_manual INTEGER NOT NULL DEFAULT 0,
   title TEXT,
   user_memo TEXT,
-  is_favorite INTEGER NOT NULL DEFAULT 0
+  is_favorite INTEGER NOT NULL DEFAULT 0,
+  color INTEGER,
+  custom_address TEXT
 );
 CREATE INDEX idx_events_start_at ON events(start_at);
 CREATE INDEX idx_events_location ON events(latitude, longitude);
@@ -166,7 +168,7 @@ class AppDatabase extends GeneratedDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -234,6 +236,24 @@ class AppDatabase extends GeneratedDatabase {
             await customStatement(
               'ALTER TABLE event_assets ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;',
             );
+          }
+          if (from < 7) {
+            // Guard against fresh installs that used the old onCreate schema
+            // which was missing color and custom_address columns.
+            final info = await customSelect(
+              'PRAGMA table_info(events)',
+            ).get();
+            final cols = info.map((r) => r.read<String>('name')).toSet();
+            if (!cols.contains('color')) {
+              await customStatement(
+                'ALTER TABLE events ADD COLUMN color INTEGER;',
+              );
+            }
+            if (!cols.contains('custom_address')) {
+              await customStatement(
+                'ALTER TABLE events ADD COLUMN custom_address TEXT;',
+              );
+            }
           }
         },
       );
@@ -340,7 +360,7 @@ class AppDatabase extends GeneratedDatabase {
     await transaction(() async {
       final overlapping = await customSelect(
         '''
-        SELECT event_id
+        SELECT event_id, title, user_memo, is_favorite, color, custom_address
         FROM events
         WHERE start_at < ? AND end_at >= ? AND is_manual = 0
         ''',
@@ -349,6 +369,19 @@ class AppDatabase extends GeneratedDatabase {
           Variable<int>(start.millisecondsSinceEpoch),
         ],
       ).get();
+
+      // Preserve user-edited fields so they survive re-indexing
+      final savedUserFields = <String, Map<String, Object?>>{
+        for (final row in overlapping)
+          row.read<String>('event_id'): {
+            'title': row.readNullable<String>('title'),
+            'user_memo': row.readNullable<String>('user_memo'),
+            'is_favorite': row.read<int>('is_favorite'),
+            'color': row.readNullable<int>('color'),
+            'custom_address': row.readNullable<String>('custom_address'),
+          }
+      };
+
       final eventIds =
           overlapping.map((row) => row.read<String>('event_id')).toList();
 
@@ -444,6 +477,33 @@ class AppDatabase extends GeneratedDatabase {
           }
         }
       });
+
+      // Restore user-edited fields for events that share the same event_id
+      for (final event in events) {
+        final saved = savedUserFields[event.eventId];
+        if (saved == null) continue;
+        final hasUserData = saved['title'] != null ||
+            saved['user_memo'] != null ||
+            (saved['is_favorite'] as int) == 1 ||
+            saved['color'] != null ||
+            saved['custom_address'] != null;
+        if (!hasUserData) continue;
+        await customStatement(
+          '''
+          UPDATE events
+          SET title = ?, user_memo = ?, is_favorite = ?, color = ?, custom_address = ?
+          WHERE event_id = ?
+          ''',
+          [
+            saved['title'],
+            saved['user_memo'],
+            saved['is_favorite'],
+            saved['color'],
+            saved['custom_address'],
+            event.eventId,
+          ],
+        );
+      }
     });
   }
 

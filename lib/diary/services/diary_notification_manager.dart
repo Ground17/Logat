@@ -128,9 +128,9 @@ class DiaryNotificationManager {
       if (ownDb) await database.close();
     }
 
-    // Schedule for next 30 days that have past-year memories
+    // Schedule for today + next 30 days that have past-year memories
     var slot = 0;
-    for (var offset = 1; offset <= 30 && slot < 20; offset++) {
+    for (var offset = 0; offset <= 30 && slot < 20; offset++) {
       final candidate = tz.TZDateTime(
         tz.local,
         now.year,
@@ -139,6 +139,7 @@ class DiaryNotificationManager {
         s.hour,
         s.minute,
       );
+      if (candidate.isBefore(now)) continue; // Skip if today's time already passed
       final key =
           '${candidate.month.toString().padLeft(2, '0')}-${candidate.day.toString().padLeft(2, '0')}';
       if (!daysWithMemories.contains(key)) continue;

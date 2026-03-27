@@ -25,33 +25,42 @@ class MemoryLoopView extends ConsumerWidget {
     }
 
     final itemsAsync = ref.watch(loopItemsProvider);
-    return itemsAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
-      data: (events) {
-        if (events.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(loopItemsProvider),
-            child: const SingleChildScrollView(
-              physics: AlwaysScrollableScrollPhysics(),
-              child: SizedBox(
-                height: 400,
-                child: Center(
-                  child: Text('No memories yet',
-                      style: TextStyle(fontSize: 18)),
-                ),
-              ),
+    // Keep the previous event list visible while reloading so the
+    // _LoopPageView StatefulWidget is never destroyed mid-session.
+    final events = itemsAsync.valueOrNull;
+
+    if (events == null) {
+      if (itemsAsync.isLoading) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (itemsAsync.hasError) {
+        return Center(child: Text('Error: ${itemsAsync.error}'));
+      }
+      return const SizedBox.shrink();
+    }
+
+    Future<void> onRefresh() async {
+      await ref.read(loopOrderedIdsProvider.notifier).forceRefresh();
+      await ref.read(loopItemsProvider.future);
+    }
+
+    if (events.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: const SingleChildScrollView(
+          physics: AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: 400,
+            child: Center(
+              child: Text('No memories yet', style: TextStyle(fontSize: 18)),
             ),
-          );
-        }
-        return RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(loopItemsProvider);
-            await ref.read(loopItemsProvider.future);
-          },
-          child: _LoopPageView(events: events),
-        );
-      },
+          ),
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: _LoopPageView(events: events),
     );
   }
 }

@@ -9,7 +9,11 @@
       "mcp__ide__getDiagnostics",
       "Bash(find /Users/ground17/Documents/Apps/Flutter/logat/lib -type f -name *notification* -o -name *reminder*)",
       "Bash(grep -E \"\\\\.dart$\")",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(for file:*)",
+      "Bash(do basename:*)",
+      "Bash(/tmp/unused_analysis.txt:*)",
+      "Read(//tmp/**)"
     ]
   }
 }

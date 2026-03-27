@@ -315,7 +315,7 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
                   TextButton(
                     onPressed: () async {
                       _searchCtrl.clear();
-                      _applyFilter(const DiaryFilter());
+                      _applyFilter(const DiaryFilter(colorFilters: {}));
                       await ref.read(dateRangeFilterProvider.notifier).resetToDefault();
                       ref.read(locationFilterProvider.notifier).state = null;
                       ref.read(selectedFolderFilterProvider.notifier).state =
@@ -351,6 +351,14 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
+                title: const Text('Anniversary Day'),
+                subtitle: const Text('100, 200, ... 900, 1000, 2000, ... 10,000 day milestones'),
+                value: _filter.isMilestoneDay,
+                onChanged: (v) =>
+                    _applyFilter(_filter.copyWith(isMilestoneDay: v)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
                 title: const Text('Favorites only'),
                 value: _filter.favoritesOnly,
                 onChanged: (v) =>
@@ -377,13 +385,10 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
                 onChanged: (v) =>
                     _applyFilter(_filter.copyWith(hasVideo: v)),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('N×100 Day Anniversary'),
-                subtitle: const Text('Only posts whose day count is a multiple of 100'),
-                value: _filter.isMilestoneDay,
-                onChanged: (v) =>
-                    _applyFilter(_filter.copyWith(isMilestoneDay: v)),
+              _ColorFilterRow(
+                selected: _filter.colorFilters,
+                onChanged: (colors) =>
+                    _applyFilter(_filter.copyWith(colorFilters: colors)),
               ),
               const Divider(),
               // Date range
@@ -438,6 +443,83 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
     );
   }
 
+}
+
+// ─── Color filter row ──────────────────────────────────────────────────────
+
+class _ColorFilterRow extends StatelessWidget {
+  const _ColorFilterRow({required this.selected, required this.onChanged});
+
+  final Set<int> selected;
+  final void Function(Set<int>) onChanged;
+
+  static const _colors = [
+    Color(0xFFBF616A), // Red
+    Color(0xFF88C0D0), // Sky
+    Color(0xFFEBCB8B), // Yellow
+    Color(0xFFA3BE8C), // Green
+    Color(0xFF5E81AC), // Blue
+    Color(0xFFB48EAD), // Purple
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const Text('Color', style: TextStyle(fontSize: 14)),
+          const SizedBox(width: 12),
+          ...(_colors.map((c) {
+            final value = c.toARGB32();
+            final isSelected = selected.contains(value);
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () {
+                  final next = Set<int>.from(selected);
+                  if (isSelected) {
+                    next.remove(value);
+                  } else {
+                    next.add(value);
+                  }
+                  onChanged(next);
+                },
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: c,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.primary
+                          : Colors.transparent,
+                      width: 2.5,
+                    ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: c.withValues(alpha: 0.5),
+                              blurRadius: 4,
+                              spreadRadius: 1,
+                            )
+                          ]
+                        : null,
+                  ),
+                ),
+              ),
+            );
+          })),
+          if (selected.isNotEmpty)
+            GestureDetector(
+              onTap: () => onChanged(const {}),
+              child: const Icon(Icons.clear, size: 18, color: Colors.grey),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─── Date range section widget ─────────────────────────────────────────────
