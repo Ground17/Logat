@@ -16,6 +16,10 @@ A personal photo diary app that automatically indexes your photo library and use
 
 All tabs show an indexing prompt if the photo library has not been indexed yet.
 
+### Onboarding
+
+- **Consent screen**: Shown on first launch; requires the user to agree to both the Terms of Service and the Privacy Policy before accessing the app. Agreement is stored in `SharedPreferences` and is not shown again on subsequent launches.
+
 ### Diary
 
 - **Auto photo indexing**: Scans the device photo library and groups photos into events by date, location, and tags
@@ -46,7 +50,7 @@ All tabs show an indexing prompt if the photo library has not been indexed yet.
 - Suggests diary topics based on recent photos, frequently visited locations, and On This Day events
 - Style options: concise (1–2 sentences), narrative (3–5 sentences), or poetic
 - Custom prompt style input (e.g. "warm and nostalgic", "short and witty")
-- Models: Gemini 2.0 Flash / Gemini 2.5 Pro
+- Model: Gemini Flash (`gemini-3-flash-preview`)
 
 ### Notifications
 
@@ -64,7 +68,7 @@ All tabs show an indexing prompt if the photo library has not been indexed yet.
 
 ### Requirements
 
-- Flutter SDK (^3.29.0)
+- Flutter SDK (Dart SDK ^3.2.0)
 - Dart SDK
 - API keys:
   - Google Gemini API key (AI suggestions and notification copy)
@@ -109,6 +113,7 @@ lib/
 │   │   ├── folder_repository.dart
 │   │   └── photo_library_repository.dart
 │   ├── screens/
+│   │   ├── consent_screen.dart        # First-launch ToS + Privacy Policy consent gate
 │   │   ├── diary_home_screen.dart     # Tab navigation + filter sheet
 │   │   ├── memory_reel_view.dart      # Loop tab + Shorts-style seek bar
 │   │   ├── recap_screen.dart          # List tab
@@ -138,14 +143,19 @@ lib/
 
 ## Database
 
-Drift (SQLite), two separate DB files:
+Drift (SQLite), single file: `diary_mvp.sqlite`
 
-| DB | Tables |
+| Table | Description |
 |---|---|
-| `legacy_logat` | posts, comments, likes, ai_tasks, scheduled_notifications, tasks, tag_settings |
-| `diary_logat` | photo_metadata, events, event_assets, folders, folder_items |
-
-Diary DB schema version: **6**
+| `assets` | Photo/video metadata indexed from the device library |
+| `indexing_state` | Singleton row tracking current indexing progress and resume cursor |
+| `events` | Diary events (auto-grouped or manual); holds title, memo, location, favorite, color |
+| `event_assets` | Many-to-many join between events and assets, with sort order |
+| `tags` | Heuristic tags (name, type, confidence) |
+| `asset_tags` | Many-to-many join between assets and tags |
+| `event_tags` | Many-to-many join between events and tags |
+| `folders` | Nested folders (up to 5 levels deep) |
+| `folder_items` | Many-to-many join between folders and events |
 
 ## Key Dependencies
 
@@ -157,11 +167,12 @@ Diary DB schema version: **6**
 | `google_maps_flutter` | Map view |
 | `flutter_local_notifications` | Local notification scheduling |
 | `http` | Gemini API calls |
-| `shared_preferences` | Settings persistence |
+| `shared_preferences` | Settings & consent state persistence |
 | `reorderable_grid_view` | Drag-to-reorder media grid |
 | `receive_sharing_intent` | Receive photos/videos shared from other apps |
 | `video_player` | In-app video playback |
 | `image_picker` | Media selection |
+| `webview_flutter` | In-app web view (Terms of Service / Privacy Policy) |
 
 ## License
 
