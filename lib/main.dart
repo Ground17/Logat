@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'diary/database/app_database.dart';
 import 'diary/models/diary_notification_settings.dart';
+import 'diary/screens/consent_screen.dart';
 import 'diary/screens/diary_home_screen.dart';
 import 'diary/services/diary_notification_manager.dart';
 import 'diary/services/hundred_days_notification_service.dart';
@@ -60,6 +61,21 @@ void main() async {
   runApp(const ProviderScope(child: DiaryApp()));
 }
 
+class _AppEntry extends StatelessWidget {
+  const _AppEntry();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: ConsentScreen.hasAccepted(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        return snapshot.data! ? const DiaryHomeScreen() : const ConsentScreen();
+      },
+    );
+  }
+}
+
 class DiaryApp extends StatelessWidget {
   const DiaryApp({super.key});
 
@@ -84,7 +100,7 @@ class DiaryApp extends StatelessWidget {
         ),
       ),
       themeMode: ThemeMode.system,
-      home: const DiaryHomeScreen(),
+      home: const _AppEntry(),
     );
   }
 }
