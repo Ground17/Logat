@@ -12,61 +12,90 @@ import '../widgets/indexing_prompt_view.dart';
 import 'add_to_folder_screen.dart';
 import 'event_detail_screen.dart';
 
-class JournalListScreen extends ConsumerWidget {
+class JournalListScreen extends ConsumerStatefulWidget {
   const JournalListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<JournalListScreen> createState() => _JournalListScreenState();
+}
+
+class _JournalListScreenState extends ConsumerState<JournalListScreen> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final eventsAsync = ref.watch(filteredJournalEventsProvider);
     final indexedCount = ref.watch(indexedAssetCountProvider);
 
-    return eventsAsync.when(
-      data: (events) {
-        if (events.isEmpty) {
-          if ((indexedCount.valueOrNull ?? 0) == 0) {
-            return const IndexingPromptView();
-          }
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.auto_stories_outlined,
-                    size: 48,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.3)),
-                const SizedBox(height: 12),
-                Text(
-                  'No events found',
-                  style: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.6)),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Try adjusting your filters',
-                  style: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.45),
-                      fontSize: 13),
-                ),
-              ],
+    // Use previous data while reloading to preserve scroll position.
+    final events = eventsAsync.valueOrNull;
+    final isLoading = eventsAsync.isLoading && events == null;
+
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (eventsAsync.hasError && events == null) {
+      return Center(child: Text('Failed to load events: ${eventsAsync.error}'));
+    }
+
+    if (events == null || events.isEmpty) {
+      if ((indexedCount.valueOrNull ?? 0) == 0) {
+        return const IndexingPromptView();
+      }
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_stories_outlined,
+                size: 48,
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.3)),
+            const SizedBox(height: 12),
+            Text(
+              'No events found',
+              style: TextStyle(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.6)),
             ),
-          );
-        }
-        return ListView.builder(
+            const SizedBox(height: 4),
+            Text(
+              'Try adjusting your filters',
+              style: TextStyle(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.45),
+                  fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: _scrollController,
           padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: events.length,
           itemBuilder: (ctx, i) => EventListTile(event: events[i]),
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Failed to load events: $e')),
+        ),
+        if (eventsAsync.isLoading)
+          const Positioned(
+            top: 0, left: 0, right: 0,
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+      ],
     );
   }
 }

@@ -230,7 +230,27 @@ final locationFilterProvider = StateProvider<LocationFilter?>((ref) => null);
 /// When non-null, DiaryHomeScreen switches to this tab index and resets to null.
 final pendingTabProvider = StateProvider<int?>((ref) => null);
 
-final gridColumnCountProvider = StateProvider<int>((ref) => 3);
+class _GridColumnNotifier extends StateNotifier<int> {
+  _GridColumnNotifier() : super(3) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) state = prefs.getInt('grid_column_count') ?? 3;
+  }
+
+  Future<void> set(int count) async {
+    state = count;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('grid_column_count', count);
+  }
+}
+
+final gridColumnCountProvider =
+    StateNotifierProvider<_GridColumnNotifier, int>(
+  (_) => _GridColumnNotifier(),
+);
 
 // ─── Tab order ────────────────────────────────────────────────────────────
 

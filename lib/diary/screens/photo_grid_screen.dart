@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:photo_manager/photo_manager.dart' hide LatLng;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/event_summary.dart';
 import '../providers/diary_providers.dart';
@@ -18,22 +17,12 @@ class PhotoGridScreen extends ConsumerStatefulWidget {
 }
 
 class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
+  final _scrollController = ScrollController();
+
   @override
-  void initState() {
-    super.initState();
-    _loadColumnCount();
-  }
-
-  Future<void> _loadColumnCount() async {
-    final prefs = await SharedPreferences.getInstance();
-    final count = prefs.getInt('grid_column_count') ?? 3;
-    if (mounted) ref.read(gridColumnCountProvider.notifier).state = count;
-  }
-
-  Future<void> _setColumnCount(int count) async {
-    ref.read(gridColumnCountProvider.notifier).state = count;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('grid_column_count', count);
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void showColumnPicker(BuildContext context) {
@@ -59,7 +48,7 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
                         color: Theme.of(ctx).colorScheme.primary)
                     : null,
                 onTap: () {
-                  _setColumnCount(n);
+                  ref.read(gridColumnCountProvider.notifier).set(n);
                   Navigator.pop(ctx);
                 },
               ),
@@ -80,52 +69,66 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
     final eventsAsync = ref.watch(filteredJournalEventsProvider);
     final columns = ref.watch(gridColumnCountProvider);
 
+    final events = eventsAsync.valueOrNull;
+    final isLoading = eventsAsync.isLoading && events == null;
+
+    if (isLoading) {
+      return const Stack(
+        children: [
+          Center(child: CircularProgressIndicator()),
+        ],
+      );
+    }
+    if (eventsAsync.hasError && events == null) {
+      return Center(child: Text('Failed to load: ${eventsAsync.error}'));
+    }
+
     return Stack(
       children: [
-        eventsAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Failed to load: $e')),
-          data: (events) {
-            if (events.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.photo_library_outlined,
-                        size: 48,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.3)),
-                    const SizedBox(height: 12),
-                    Text(
-                      'No events found',
-                      style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6)),
-                    ),
-                  ],
+        if (events == null || events.isEmpty)
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.photo_library_outlined,
+                    size: 48,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.3)),
+                const SizedBox(height: 12),
+                Text(
+                  'No events found',
+                  style: TextStyle(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.6)),
                 ),
-              );
-            }
-            return GridView.builder(
-              padding: const EdgeInsets.all(2),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                crossAxisSpacing: 2,
-                mainAxisSpacing: 2,
-              ),
-              itemCount: events.length,
-              itemBuilder: (ctx, i) => _GridTile(key: ValueKey(events[i].eventId), event: events[i]),
-            );
-          },
-        ),
+              ],
+            ),
+          )
+        else
+          GridView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(2, 2, 2, 80),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              crossAxisSpacing: 2,
+              mainAxisSpacing: 2,
+            ),
+            itemCount: events.length,
+            itemBuilder: (ctx, i) => _GridTile(key: ValueKey(events[i].eventId), event: events[i]),
+          ),
+        if (eventsAsync.isLoading)
+          const Positioned(
+            top: 0, left: 0, right: 0,
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
         // Column count picker button
         Positioned(
           bottom: 16,
-          right: 16,
+          left: 16,
           child: _ColumnPickerButton(
             onTap: () => showColumnPicker(context),
           ),
