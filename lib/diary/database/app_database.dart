@@ -1449,6 +1449,43 @@ class AppDatabase extends GeneratedDatabase {
     return row.read<int>('count');
   }
 
+  /// Cleans up orphaned DB rows, checkpoints the WAL, and runs VACUUM.
+  /// Returns a record of (bytesBefore, bytesAfter) so the caller can
+  /// show how much space was reclaimed.
+  Future<({int bytesBefore, int bytesAfter})> cleanupDatabase() async {
+    final directory = await getApplicationDocumentsDirectory();
+    final dbFile = File(p.join(directory.path, 'diary_mvp.sqlite'));
+    final walFile = File(p.join(directory.path, 'diary_mvp.sqlite-wal'));
+    final shmFile = File(p.join(directory.path, 'diary_mvp.sqlite-shm'));
+
+    final bytesBefore = (dbFile.existsSync() ? dbFile.lengthSync() : 0) +
+        (walFile.existsSync() ? walFile.lengthSync() : 0) +
+        (shmFile.existsSync() ? shmFile.lengthSync() : 0);
+
+    // Remove orphaned rows that can safely be deleted.
+    await customStatement(
+      'DELETE FROM asset_tags WHERE asset_id NOT IN (SELECT asset_id FROM assets);',
+    );
+    await customStatement(
+      'DELETE FROM event_tags WHERE event_id NOT IN (SELECT event_id FROM events);',
+    );
+    await customStatement(
+      'DELETE FROM event_assets WHERE event_id NOT IN (SELECT event_id FROM events);',
+    );
+
+    // Fold the WAL file into the main database file.
+    await customStatement('PRAGMA wal_checkpoint(TRUNCATE);');
+
+    // Reclaim freed pages (rewrites the whole DB file — can take a few seconds).
+    await customStatement('VACUUM;');
+
+    final bytesAfter = (dbFile.existsSync() ? dbFile.lengthSync() : 0) +
+        (walFile.existsSync() ? walFile.lengthSync() : 0) +
+        (shmFile.existsSync() ? shmFile.lengthSync() : 0);
+
+    return (bytesBefore: bytesBefore, bytesAfter: bytesAfter);
+  }
+
   Future<Map<String, List<String>>> _loadEventAssetMap(
       List<String> eventIds) async {
     if (eventIds.isEmpty) {

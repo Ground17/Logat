@@ -118,7 +118,7 @@ class _PhotoGridScreenState extends ConsumerState<PhotoGridScreen> {
                 mainAxisSpacing: 2,
               ),
               itemCount: events.length,
-              itemBuilder: (ctx, i) => _GridTile(event: events[i]),
+              itemBuilder: (ctx, i) => _GridTile(key: ValueKey(events[i].eventId), event: events[i]),
             );
           },
         ),
@@ -196,7 +196,7 @@ class _ColumnPickerButton extends ConsumerWidget {
 // ─── Grid tile ────────────────────────────────────────────────────────────
 
 class _GridTile extends StatefulWidget {
-  const _GridTile({required this.event});
+  const _GridTile({super.key, required this.event});
   final EventSummary event;
 
   @override

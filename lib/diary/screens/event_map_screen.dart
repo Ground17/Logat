@@ -33,15 +33,21 @@ class _EventMapScreenState extends ConsumerState<EventMapScreen> {
 
   Future<void> _loadMyLocation() async {
     try {
-      final data = await Location().getLocation();
-      if (data.latitude == null || data.longitude == null) return;
-      final icon = await _buildWhiteMarker();
-      if (mounted) {
-        setState(() {
-          _myPosition = LatLng(data.latitude!, data.longitude!);
-          _myLocationIcon = icon;
-        });
+      final location = Location();
+      final permission = await location.hasPermission();
+      if (permission == PermissionStatus.denied ||
+          permission == PermissionStatus.deniedForever) {
+        return;
       }
+      final data = await location.getLocation();
+      if (data.latitude == null || data.longitude == null) return;
+      if (!mounted) return;
+      final icon = await _buildWhiteMarker();
+      if (!mounted) return;
+      setState(() {
+        _myPosition = LatLng(data.latitude!, data.longitude!);
+        _myLocationIcon = icon;
+      });
     } catch (_) {}
   }
 

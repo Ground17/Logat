@@ -903,7 +903,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                         icon: _event.color != null
                             ? BitmapDescriptor.defaultMarkerWithHue(
                                 HSVColor.fromColor(Color(_event.color!)).hue)
-                            : BitmapDescriptor.defaultMarker,
+                            : BitmapDescriptor.defaultMarkerWithHue(
+                                BitmapDescriptor.hueRose),
                       ),
                     },
                     myLocationButtonEnabled: false,

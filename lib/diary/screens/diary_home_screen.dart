@@ -237,7 +237,13 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => const _FilterSheet(),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, sc) => _FilterSheet(scrollController: sc),
+      ),
     );
   }
 
@@ -246,7 +252,9 @@ class _DiaryHomeScreenState extends ConsumerState<DiaryHomeScreen> {
 // ─── Filter bottom sheet ──────────────────────────────────────────────────
 
 class _FilterSheet extends ConsumerStatefulWidget {
-  const _FilterSheet();
+  const _FilterSheet({this.scrollController});
+
+  final ScrollController? scrollController;
 
   @override
   ConsumerState<_FilterSheet> createState() => _FilterSheetState();
@@ -287,6 +295,7 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
         child: SingleChildScrollView(
+          controller: widget.scrollController,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,

@@ -48,6 +48,7 @@ class _IndexingPromptViewState extends ConsumerState<IndexingPromptView> {
         ],
       ),
     );
+    if (!mounted) return;
     if (enable == true) {
       final settings = ref.read(recommendationSettingsProvider);
       ref

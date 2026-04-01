@@ -71,10 +71,39 @@ class JournalListScreen extends ConsumerWidget {
   }
 }
 
-class EventListTile extends ConsumerWidget {
+class EventListTile extends ConsumerStatefulWidget {
   const EventListTile({super.key, required this.event});
 
   final EventSummary event;
+
+  @override
+  ConsumerState<EventListTile> createState() => _EventListTileState();
+}
+
+class _EventListTileState extends ConsumerState<EventListTile> {
+  bool? _isVideo;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMediaType();
+  }
+
+  @override
+  void didUpdateWidget(EventListTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.event.representativeAssetId !=
+        widget.event.representativeAssetId) {
+      _isVideo = null;
+      _loadMediaType();
+    }
+  }
+
+  Future<void> _loadMediaType() async {
+    if (widget.event.representativeAssetId == 'manual_no_photo') return;
+    final asset = await AssetEntity.fromId(widget.event.representativeAssetId);
+    if (mounted) setState(() => _isVideo = asset?.type == AssetType.video);
+  }
 
   String _relativeDate(DateTime dt) {
     final diff = DateTime.now().difference(dt.toLocal());
@@ -90,9 +119,14 @@ class EventListTile extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final event = widget.event;
     final formatter = DateFormat('MMM d, yyyy · HH:mm');
     final local = event.startAt.toLocal();
+    final count = event.assetCount;
+    final mediaLabel = (_isVideo == true)
+        ? '$count ${count == 1 ? 'video' : 'videos'}'
+        : '$count ${count == 1 ? 'photo' : 'photos'}';
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -114,24 +148,12 @@ class EventListTile extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FutureBuilder<AssetEntity?>(
-                    future: event.representativeAssetId == 'manual_no_photo'
-                        ? Future.value(null)
-                        : AssetEntity.fromId(event.representativeAssetId),
-                    builder: (ctx, snap) {
-                      final isVideo = snap.data?.type == AssetType.video;
-                      final count = event.assetCount;
-                      final mediaLabel = isVideo
-                          ? '$count ${count == 1 ? 'video' : 'videos'}'
-                          : '$count ${count == 1 ? 'photo' : 'photos'}';
-                      return Text(
-                        event.title ?? mediaLabel,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                        ),
-                      );
-                    },
+                  Text(
+                    event.title ?? mediaLabel,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -219,6 +241,8 @@ class EventCardGallery extends StatefulWidget {
 
 class _CardGalleryState extends State<EventCardGallery> {
   int _page = 0;
+  // assetId → (thumbBytes, isVideo)
+  final Map<String, (Uint8List?, bool)> _cache = {};
 
   List<String> get _ids {
     if (widget.event.assetIds.isNotEmpty) return widget.event.assetIds;
@@ -226,6 +250,33 @@ class _CardGalleryState extends State<EventCardGallery> {
       return [widget.event.representativeAssetId];
     }
     return [];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final ids = _ids;
+    if (ids.isNotEmpty) _loadThumb(ids[0]);
+  }
+
+  @override
+  void didUpdateWidget(EventCardGallery oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final ids = _ids;
+    if (ids.isNotEmpty && !_cache.containsKey(ids[0])) {
+      _loadThumb(ids[0]);
+    }
+  }
+
+  Future<void> _loadThumb(String assetId) async {
+    if (_cache.containsKey(assetId)) return;
+    final asset = await AssetEntity.fromId(assetId);
+    if (asset == null) {
+      if (mounted) setState(() => _cache[assetId] = (null, false));
+      return;
+    }
+    final bytes = await asset.thumbnailDataWithSize(const ThumbnailSize(800, 440));
+    if (mounted) setState(() => _cache[assetId] = (bytes, asset.type == AssetType.video));
   }
 
   @override
@@ -239,48 +290,35 @@ class _CardGalleryState extends State<EventCardGallery> {
           height: 220,
           child: PageView.builder(
             itemCount: ids.length,
-            onPageChanged: (i) => setState(() => _page = i),
-            itemBuilder: (ctx, i) => FutureBuilder<AssetEntity?>(
-              future: AssetEntity.fromId(ids[i]),
-              builder: (ctx, assetSnap) {
-                if (!assetSnap.hasData) {
-                  return Container(
-                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                  );
-                }
-                return FutureBuilder<Uint8List?>(
-                  future: assetSnap.data!.thumbnailDataWithSize(
-                    const ThumbnailSize(800, 440),
-                  ),
-                  builder: (ctx2, thumbSnap) {
-                    if (!thumbSnap.hasData) {
-                      return Container(
-                        color: Theme.of(ctx2)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                      );
-                    }
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.memory(
-                          thumbSnap.data!,
-                          fit: BoxFit.cover,
-                        ),
-                        if (assetSnap.data!.type == AssetType.video)
-                          const Center(
-                            child: Icon(
-                              Icons.play_circle_outline,
-                              color: Colors.white,
-                              size: 48,
-                            ),
-                          ),
-                      ],
-                    );
-                  },
+            onPageChanged: (i) {
+              setState(() => _page = i);
+              _loadThumb(ids[i]);
+            },
+            itemBuilder: (ctx, i) {
+              final cached = _cache[ids[i]];
+              if (cached == null || cached.$1 == null) {
+                return Container(
+                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                  child: cached == null
+                      ? const SizedBox.shrink()
+                      : const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white54)),
                 );
-              },
-            ),
+              }
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.memory(cached.$1!, fit: BoxFit.cover),
+                  if (cached.$2)
+                    const Center(
+                      child: Icon(
+                        Icons.play_circle_outline,
+                        color: Colors.white,
+                        size: 48,
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ),
         if (ids.length > 1)

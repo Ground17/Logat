@@ -163,35 +163,6 @@ class _ConsentScreenState extends State<ConsentScreen> {
   }
 }
 
-class _ConsentTile extends StatelessWidget {
-  const _ConsentTile({
-    required this.checked,
-    required this.onChanged,
-    required this.child,
-  });
-
-  final bool checked;
-  final ValueChanged<bool?> onChanged;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Checkbox(value: checked, onChanged: onChanged),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 12.0),
-            child: child,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _WebViewPage extends StatefulWidget {
   const _WebViewPage({required this.url, required this.title});
 
@@ -221,3 +192,33 @@ class _WebViewPageState extends State<_WebViewPage> {
     );
   }
 }
+
+class _ConsentTile extends StatelessWidget {
+  const _ConsentTile({
+    required this.checked,
+    required this.onChanged,
+    required this.child,
+  });
+
+  final bool checked;
+  final ValueChanged<bool?> onChanged;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Checkbox(value: checked, onChanged: onChanged),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12.0),
+            child: child,
+          ),
+        ),
+      ],
+    );
+  }
+}
+

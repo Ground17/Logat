@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:workmanager/workmanager.dart';
-
 import 'package:intl/intl.dart';
 
 import '../models/recommendation_settings.dart';
@@ -21,6 +21,27 @@ class DiarySettingsScreen extends ConsumerStatefulWidget {
 class _DiarySettingsScreenState extends ConsumerState<DiarySettingsScreen> {
   void _update(RecommendationSettings settings) {
     ref.read(recommendationSettingsProvider.notifier).update(settings);
+  }
+
+  Future<void> _runCleanup() async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Cleaning up database…'), duration: Duration(minutes: 2)),
+    );
+    try {
+      final db = ref.read(appDatabaseProvider);
+      final result = await db.cleanupDatabase();
+      messenger.clearSnackBars();
+      final saved = result.bytesBefore - result.bytesAfter;
+      final savedMb = (saved / 1024 / 1024).toStringAsFixed(1);
+      final afterMb = (result.bytesAfter / 1024 / 1024).toStringAsFixed(1);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Done. Saved $savedMb MB · DB is now $afterMb MB')),
+      );
+    } catch (e) {
+      messenger.clearSnackBars();
+      messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
   }
 
   Future<void> _runIndex() async {
@@ -183,6 +204,49 @@ class _DiarySettingsScreenState extends ConsumerState<DiarySettingsScreen> {
             ),
           ),
 
+          const Divider(),
+
+          // ── Storage ────────────────────────────────────────────────────────
+          _SectionHeader(title: 'Storage'),
+          ListTile(
+            title: const Text('Clean Up Database'),
+            subtitle: const Text(
+                'Remove orphaned data and compact the database file'),
+            trailing: const Icon(Icons.cleaning_services_outlined),
+            onTap: _runCleanup,
+          ),
+
+          const Divider(),
+
+          // ── Legal ──────────────────────────────────────────────────────────
+          _SectionHeader(title: 'Legal'),
+          ListTile(
+            title: const Text('Terms of Service'),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => _WebViewPage(
+                  url: 'https://ground171717.blogspot.com/2026/03/terms-of-service-logat.html',
+                  title: 'Terms of Service',
+                ),
+              ),
+            ),
+          ),
+          ListTile(
+            title: const Text('Privacy Policy'),
+            trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => _WebViewPage(
+                  url: 'https://ground171717.blogspot.com/2026/03/privacy-policy-logat.html',
+                  title: 'Privacy Policy',
+                ),
+              ),
+            ),
+          ),
+
           const SizedBox(height: 32),
         ],
       ),
@@ -299,6 +363,38 @@ class _DiarySettingsScreenState extends ConsumerState<DiarySettingsScreen> {
     if (result != null && result.trim().isNotEmpty) {
       _update(settings.copyWith(promptStyle: result.trim()));
     }
+  }
+}
+
+// ─── In-app WebView page ───────────────────────────────────────────────────
+
+class _WebViewPage extends StatefulWidget {
+  const _WebViewPage({required this.url, required this.title});
+
+  final String url;
+  final String title;
+
+  @override
+  State<_WebViewPage> createState() => _WebViewPageState();
+}
+
+class _WebViewPageState extends State<_WebViewPage> {
+  late final WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(widget.url));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: WebViewWidget(controller: _controller),
+    );
   }
 }
 
